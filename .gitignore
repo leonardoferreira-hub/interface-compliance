@@ -1,0 +1,62 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Clawdbot / local tooling scratch
+.tmp/
+tmp/
+
+# Python cache
+__pycache__/
+scripts/__pycache__/
+
+# Supabase local folders
+supabase/.branches/
+supabase/.temp/
+
+# Local-only notes & one-off scripts
+INSTRUCOES_SETUP_BANCO.md
+aplicar_fix_permissions.py
+check_database.py
+contar_operacoes.py
+create_schema_direct.py
+executar_sql_via_api.py
+expor_schema.py
+expor_schema_v2.py
+run_migration.py
+setup_agora.py
+setup_com_connection_string.py
+setup_database_auto.py
+setup_database_complete.sql
+setup_schema_automatico.py
+fix_permissions.sql
+test_supabase_connection.js
+
+# Claude local files
+.claude/settings.local.json
+.claude/settings.json
+.claude/skills/
+
+# Windows oddities
+nul
