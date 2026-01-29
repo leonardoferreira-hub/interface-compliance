@@ -1,12 +1,6 @@
 import { useState, useCallback } from 'react';
 import { toast } from 'sonner';
-import { createClient } from '@supabase/supabase-js';
-
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-// Cliente Supabase para storage
-const supabaseStorage = createClient(supabaseUrl, supabaseKey);
+import { supabase } from '@/integrations/supabase/client';
 
 export type TipoDocumentoInvestidor = 'kyc' | 'suitability' | 'ficha_cadastral' | 'comprovante_residencia' | 'rg_cpf' | 'outros';
 
@@ -101,7 +95,7 @@ export function useDocumentosInvestidor(investidorId: string | undefined) {
       const fileExt = file.name.split('.').pop();
       const fileName = `${investidorId}/${tipo}_${Date.now()}.${fileExt}`;
       
-      const { error: uploadError } = await supabaseStorage.storage
+      const { error: uploadError } = await supabase.storage
         .from('investidor-documentos')
         .upload(fileName, file, {
           cacheControl: '3600',
@@ -111,12 +105,12 @@ export function useDocumentosInvestidor(investidorId: string | undefined) {
       if (uploadError) throw uploadError;
 
       // Obter URL pública
-      const { data: urlData } = supabaseStorage.storage
+      const { data: urlData } = supabase.storage
         .from('investidor-documentos')
         .getPublicUrl(fileName);
 
       // Salvar no banco via RPC
-      const { data, error: dbError } = await supabaseStorage
+      const { data, error: dbError } = await supabase
         .rpc('adicionar_documento_investidor', {
           p_investidor_id: investidorId,
           p_tipo_documento: tipo,
@@ -140,7 +134,7 @@ export function useDocumentosInvestidor(investidorId: string | undefined) {
 
   const removerDocumento = useCallback(async (docId: string): Promise<boolean> => {
     try {
-      const { error } = await supabaseStorage
+      const { error } = await supabase
         .rpc('remover_documento_investidor', {
           p_documento_id: docId,
         });
@@ -161,7 +155,7 @@ export function useDocumentosInvestidor(investidorId: string | undefined) {
     observacoes?: string
   ): Promise<boolean> => {
     try {
-      const { error } = await supabaseStorage
+      const { error } = await supabase
         .rpc('validar_documento_investidor', {
           p_documento_id: docId,
           p_status: status,

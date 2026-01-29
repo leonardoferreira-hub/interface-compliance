@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import { 
   Users, Search, Plus, Filter, MoreHorizontal, 
   User, Building2, CheckCircle, XCircle, Clock, 
-  FileText, ChevronRight, Upload
+  FileText, ChevronRight, Upload, Link2, Copy
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -25,6 +25,7 @@ import {
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
 
 const statusConfig = {
   pendente: { label: 'Pendente', color: 'bg-slate-100 text-slate-700 border-slate-200' },
@@ -40,6 +41,8 @@ export default function InvestidoresPage() {
   const [drawerNovo, setDrawerNovo] = useState(false);
   const [drawerDetalhes, setDrawerDetalhes] = useState(false);
   const [investidorSelecionado, setInvestidorSelecionado] = useState<Investidor | null>(null);
+  const [linkOnboarding, setLinkOnboarding] = useState<string>('');
+  const [gerandoLink, setGerandoLink] = useState(false);
 
   const { data: investidores, isLoading } = useInvestidores(filtroStatus || undefined);
   const { data: detalhes } = useInvestidorDetalhes(investidorSelecionado?.id);
@@ -80,7 +83,31 @@ export default function InvestidoresPage() {
 
   const abrirDetalhes = (inv: Investidor) => {
     setInvestidorSelecionado(inv);
+    setLinkOnboarding('');
     setDrawerDetalhes(true);
+  };
+
+  const gerarLinkOnboarding = async () => {
+    if (!investidorSelecionado) return;
+    setGerandoLink(true);
+    try {
+      const { data, error } = await supabase.rpc('gerar_link_onboarding', {
+        p_investidor_id: investidorSelecionado.id,
+        p_dias_validade: 7,
+      });
+      if (error) throw error;
+      setLinkOnboarding(data);
+      toast.success('Link gerado!');
+    } catch (err: any) {
+      toast.error(err.message || 'Erro ao gerar link');
+    } finally {
+      setGerandoLink(false);
+    }
+  };
+
+  const copiarLink = () => {
+    navigator.clipboard.writeText(linkOnboarding);
+    toast.success('Link copiado!');
   };
 
   return (
@@ -390,7 +417,7 @@ export default function InvestidoresPage() {
                     </Card>
                   </TabsContent>
 
-                  <TabsContent value="analise" className="mt-6">
+                  <TabsContent value="analise" className="mt-6 space-y-4">
                     <Card>
                       <CardContent className="p-4">
                         <div className="flex items-center justify-between">
@@ -404,15 +431,29 @@ export default function InvestidoresPage() {
                         
                         {investidorSelecionado.status_onboarding !== 'aprovado' && (
                           <div className="flex gap-2 mt-6">
-                            <Button variant="outline" className="flex-1">
+                            <Button 
+                              variant="outline" 
+                              className="flex-1"
+                              onClick={() => analisar.mutateAsync({ id: investidorSelecionado.id, status: 'em_analise' })}
+                              disabled={analisar.isPending}
+                            >
                               <Clock className="h-4 w-4 mr-2" />
                               Em Análise
                             </Button>
-                            <Button className="flex-1 bg-emerald-600 hover:bg-emerald-700">
+                            <Button 
+                              className="flex-1 bg-emerald-600 hover:bg-emerald-700"
+                              onClick={() => analisar.mutateAsync({ id: investidorSelecionado.id, status: 'aprovado' })}
+                              disabled={analisar.isPending}
+                            >
                               <CheckCircle className="h-4 w-4 mr-2" />
                               Aprovar
                             </Button>
-                            <Button variant="destructive" className="flex-1">
+                            <Button 
+                              variant="destructive" 
+                              className="flex-1"
+                              onClick={() => analisar.mutateAsync({ id: investidorSelecionado.id, status: 'reprovado' })}
+                              disabled={analisar.isPending}
+                            >
                               <XCircle className="h-4 w-4 mr-2" />
                               Reprovar
                             </Button>
@@ -420,6 +461,56 @@ export default function InvestidoresPage() {
                         )}
                       </CardContent>
                     </Card>
+                    
+                    {/* Gerar Link de Onboarding */}
+                    {investidorSelecionado.status_onboarding === 'pendente' && (
+                      <Card className="border-blue-200">
+                        <CardContent className="p-4">
+                          <h4 className="font-medium flex items-center gap-2 mb-3">
+                            <Link2 className="h-4 w-4 text-blue-600" />
+                            Link de Onboarding
+                          </h4>
+                          <p className="text-sm text-slate-500 mb-3">
+                            Gere um link único para o investidor preencher seus dados (KYC, Suitability) e enviar documentos.
+                          </p>
+                          
+                          {!linkOnboarding ? (
+                            <Button 
+                              variant="outline" 
+                              className="w-full"
+                              onClick={gerarLinkOnboarding}
+                              disabled={gerandoLink}
+                            >
+                              {gerandoLink ? (
+                                <>
+                                  <Clock className="h-4 w-4 mr-2 animate-spin" />
+                                  Gerando...
+                                </>
+                              ) : (
+                                <>
+                                  <Link2 className="h-4 w-4 mr-2" />
+                                  Gerar Link de Cadastro
+                                </>
+                              )}
+                            </Button>
+                          ) : (
+                            <div className="space-y-2">
+                              <div className="bg-slate-100 p-3 rounded text-sm break-all">
+                                {linkOnboarding}
+                              </div>
+                              <Button 
+                                variant="outline" 
+                                className="w-full"
+                                onClick={copiarLink}
+                              >
+                                <Copy className="h-4 w-4 mr-2" />
+                                Copiar Link
+                              </Button>
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    )}
                   </TabsContent>
                 </Tabs>
               </div>

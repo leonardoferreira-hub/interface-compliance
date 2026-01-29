@@ -7,6 +7,10 @@ import Index from "./pages/Index";
 import Verificacoes from "./pages/Verificacoes";
 import Investidores from "./pages/Investidores";
 import Historico from "./pages/Historico";
+import Onboarding from "./pages/Onboarding";
+import OnboardingObrigado from "./pages/OnboardingObrigado";
+import CadastroInvestidoresEmissao from "./pages/CadastroInvestidoresEmissao";
+import ObrigadoInvestidor from "./pages/ObrigadoInvestidor";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -22,6 +26,10 @@ const App = () => (
           <Route path="/verificacoes" element={<Verificacoes />} />
           <Route path="/investidores" element={<Investidores />} />
           <Route path="/historico" element={<Historico />} />
+          <Route path="/onboarding/:token" element={<Onboarding />} />
+          <Route path="/obrigado" element={<OnboardingObrigado />} />
+          <Route path="/cadastro-investidores/:emissaoId" element={<CadastroInvestidoresEmissao />} />
+          <Route path="/obrigado-investidor" element={<ObrigadoInvestidor />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
