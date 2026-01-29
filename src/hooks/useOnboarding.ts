@@ -310,56 +310,74 @@ export function useOnboarding(): UseOnboardingReturn {
     setError(null);
 
     try {
-      // Criar investidor
-      const investidorData: any = {
-        tipo: data.investorType,
-        pontuacao_suitability: data.suitability.pontuacaoTotal,
-        perfil_suitability: data.suitability.perfil,
-        is_profissional: data.declaracaoProfissional?.isProfissional || false,
-        documentos: data.documentos.map(d => ({ tipo: d.tipo, nome: d.nome })),
-        status: 'pendente',
-      };
+      // Criar investidor - usando estrutura JSONB do banco
+      let cpf_cnpj = '';
+      let nome = '';
+      let email = '';
+      let telefone = '';
+      let tipo = 'pessoa_fisica';
+      let kyc_json: any = {};
 
-      // Adicionar dados específicos por tipo
       if (data.investorType === 'PF' && data.dadosPF) {
-        Object.assign(investidorData, {
-          nome_pf: data.dadosPF.nome,
+        cpf_cnpj = data.dadosPF.cpf?.replace(/\D/g, '') || '';
+        nome = data.dadosPF.nome || '';
+        email = data.dadosPF.email || '';
+        telefone = data.dadosPF.telefone || '';
+        tipo = 'pessoa_fisica';
+        kyc_json = {
+          nome_completo: data.dadosPF.nome,
           cpf: data.dadosPF.cpf,
           data_nascimento: data.dadosPF.dataNascimento,
-          email: data.dadosPF.email,
-          telefone: data.dadosPF.telefone,
-          cep: data.dadosPF.endereco.cep,
-          logradouro: data.dadosPF.endereco.logradouro,
-          numero: data.dadosPF.endereco.numero,
-          complemento: data.dadosPF.endereco.complemento,
-          bairro: data.dadosPF.endereco.bairro,
-          cidade: data.dadosPF.endereco.cidade,
-          estado: data.dadosPF.endereco.estado,
-          ocupacao: data.dadosPF.ocupacao,
-          rendimentos_anuais: data.dadosPF.rendimentosAnuais,
+          profissao: data.dadosPF.ocupacao,
+          renda_mensal: data.dadosPF.rendimentosAnuais,
           patrimonio: data.dadosPF.patrimonio,
           is_pep: data.dadosPF.isPEP,
           cargo_pep: data.dadosPF.cargoPEP,
-        });
+          endereco: data.dadosPF.endereco,
+        };
       } else if (data.investorType === 'PJ' && data.dadosPJ) {
-        Object.assign(investidorData, {
+        cpf_cnpj = data.dadosPJ.cnpj?.replace(/\D/g, '') || '';
+        nome = data.dadosPJ.denominacaoSocial || '';
+        email = data.dadosPJ.email || '';
+        telefone = data.dadosPJ.telefone || '';
+        tipo = 'pessoa_juridica';
+        kyc_json = {
           razao_social: data.dadosPJ.denominacaoSocial,
           cnpj: data.dadosPJ.cnpj,
-          email: data.dadosPJ.email,
-          telefone: data.dadosPJ.telefone,
-          cep: data.dadosPJ.endereco.cep,
-          logradouro: data.dadosPJ.endereco.logradouro,
-          numero: data.dadosPJ.endereco.numero,
-          complemento: data.dadosPJ.endereco.complemento,
-          bairro: data.dadosPJ.endereco.bairro,
-          cidade: data.dadosPJ.endereco.cidade,
-          estado: data.dadosPJ.endereco.estado,
           faturamento_medio: data.dadosPJ.faturamentoMedioMensal,
           patrimonio: data.dadosPJ.patrimonio,
           controladores: data.dadosPJ.controladores,
           administradores: data.dadosPJ.administradores,
-        });
+          endereco: data.dadosPJ.endereco,
+        };
+      } else if (data.investorType === 'INSTITUCIONAL' && data.dadosInstitucional) {
+        cpf_cnpj = data.dadosInstitucional.cnpj?.replace(/\D/g, '') || '';
+        nome = data.dadosInstitucional.denominacaoSocial || '';
+        email = data.dadosInstitucional.email || '';
+        telefone = data.dadosInstitucional.telefone || '';
+        tipo = 'pessoa_juridica';
+        kyc_json = {
+          razao_social: data.dadosInstitucional.denominacaoSocial,
+          cnpj: data.dadosInstitucional.cnpj,
+          tipo_instituicao: data.dadosInstitucional.tipoInstituicao,
+          patrimonio_liquido: data.dadosInstitucional.patrimonioLiquido,
+          responsavel: data.dadosInstitucional.responsavel,
+          endereco: data.dadosInstitucional.endereco,
+        };
       }
+
+      const investidorData: any = {
+        cpf_cnpj,
+        nome,
+        email,
+        telefone,
+        tipo,
+        tipo_investidor: data.declaracaoProfissional?.isProfissional ? 'profissional' : 'varejo',
+        status_onboarding: 'em_analise',
+        kyc_json,
+        suitability_json: data.suitability,
+        perfil_risco: data.suitability.perfil,
+      };
 
       // Inserir investidor
       const { data: investidor, error: investidorError } = await supabase
