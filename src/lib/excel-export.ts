@@ -1,9 +1,15 @@
-import * as XLSX from 'xlsx';
 import { supabase } from '@/integrations/supabase/client';
 import { formatCurrency } from '@/utils/formatters';
 
+// Dynamic import do xlsx - carregado apenas quando necessário
+async function getXLSX() {
+  const XLSX = await import('xlsx');
+  return XLSX;
+}
+
 // Helpers
-function downloadWorkbook(wb: XLSX.WorkBook, filename: string) {
+async function downloadWorkbook(wb: any, filename: string) {
+  const XLSX = await getXLSX();
   const out = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
   const blob = new Blob([out], {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -18,7 +24,8 @@ function downloadWorkbook(wb: XLSX.WorkBook, filename: string) {
   URL.revokeObjectURL(url);
 }
 
-function toSheet(data: any[]) {
+async function toSheet(data: any[]) {
+  const XLSX = await getXLSX();
   return XLSX.utils.json_to_sheet(data, { skipHeader: false });
 }
 
@@ -115,16 +122,17 @@ function buildResumoRow(bundle: Awaited<ReturnType<typeof fetchEmissaoBundle>>):
 }
 
 export async function exportEmissaoToExcel(idEmissaoComercial: string) {
+  const XLSX = await getXLSX();
   const bundle = await fetchEmissaoBundle(idEmissaoComercial);
 
   const wb = XLSX.utils.book_new();
 
   const resumo = [buildResumoRow(bundle)];
-  XLSX.utils.book_append_sheet(wb, toSheet(resumo), 'Resumo');
+  XLSX.utils.book_append_sheet(wb, await toSheet(resumo), 'Resumo');
 
-  XLSX.utils.book_append_sheet(wb, toSheet(bundle.series), 'Series');
+  XLSX.utils.book_append_sheet(wb, await toSheet(bundle.series), 'Series');
 
-  // custos: header mais “humano”
+  // custos: header mais "humano"
   const linhas = (bundle.custosLinhas ?? []).map((l: any) => ({
     papel: l.papel,
     periodicidade: l.periodicidade,
@@ -135,13 +143,15 @@ export async function exportEmissaoToExcel(idEmissaoComercial: string) {
     valor_upfront_bruto: l.valor_upfront_bruto,
     valor_recorrente_bruto: l.valor_recorrente_bruto,
   }));
-  XLSX.utils.book_append_sheet(wb, toSheet(linhas), 'Custos_Linhas');
+  XLSX.utils.book_append_sheet(wb, await toSheet(linhas), 'Custos_Linhas');
 
   const numero = bundle.emissao?.numero_emissao ?? 'emissao';
-  downloadWorkbook(wb, `${numero}_resumo.xlsx`);
+  await downloadWorkbook(wb, `${numero}_resumo.xlsx`);
 }
 
 export async function exportAllEmissoesToExcel(emissoes: Array<{ id_emissao_comercial?: string; id?: string; numero_emissao?: string | null }>) {
+  const XLSX = await getXLSX();
+  
   // Para export completo: compila o Resumo (1 linha por emissão) + sheets detalhados.
   const ids = Array.from(
     new Set(
@@ -156,7 +166,7 @@ export async function exportAllEmissoesToExcel(emissoes: Array<{ id_emissao_come
   const wb = XLSX.utils.book_new();
 
   const resumoAll = bundles.map((b) => buildResumoRow(b));
-  XLSX.utils.book_append_sheet(wb, toSheet(resumoAll), 'Emissoes_Resumo');
+  XLSX.utils.book_append_sheet(wb, await toSheet(resumoAll), 'Emissoes_Resumo');
 
   // Sheets detalhadas: séries e custos (linhas) com id/numero para join no Excel
   const allSeries = bundles.flatMap((b) =>
@@ -166,7 +176,7 @@ export async function exportAllEmissoesToExcel(emissoes: Array<{ id_emissao_come
       ...s,
     })),
   );
-  XLSX.utils.book_append_sheet(wb, toSheet(allSeries), 'Series');
+  XLSX.utils.book_append_sheet(wb, await toSheet(allSeries), 'Series');
 
   const allCustosLinhas = bundles.flatMap((b) =>
     (b.custosLinhas ?? []).map((l: any) => ({
@@ -183,7 +193,7 @@ export async function exportAllEmissoesToExcel(emissoes: Array<{ id_emissao_come
       valor_recorrente_bruto: l.valor_recorrente_bruto,
     })),
   );
-  XLSX.utils.book_append_sheet(wb, toSheet(allCustosLinhas), 'Custos_Linhas');
+  XLSX.utils.book_append_sheet(wb, await toSheet(allCustosLinhas), 'Custos_Linhas');
 
-  downloadWorkbook(wb, `emissoes_resumo.xlsx`);
+  await downloadWorkbook(wb, `emissoes_resumo.xlsx`);
 }

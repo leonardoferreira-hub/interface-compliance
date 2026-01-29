@@ -1,13 +1,9 @@
-import React from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
 import "./index.css";
-import { ThemeProvider } from "./components/theme-provider";
+import { registerServiceWorker } from "./lib/registerSW.ts";
 
-createRoot(document.getElementById("root")!).render(
-  <React.StrictMode>
-    <ThemeProvider defaultTheme="light" storageKey="vite-ui-theme">
-      <App />
-    </ThemeProvider>
-  </React.StrictMode>
-);
+// Registrar Service Worker para PWA
+registerServiceWorker();
+
+createRoot(document.getElementById("root")!).render(<App />);

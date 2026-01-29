@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  User, Building2, FileText, Upload, CheckCircle, 
-  ChevronRight, ChevronLeft, AlertCircle, Loader2 
+  User, Building2, Users, FileText, Upload, CheckCircle, 
+  ChevronRight, ChevronLeft, AlertCircle, Loader2, ArrowLeft
 } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -16,200 +16,1494 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
-interface InvestidorData {
-  id: string;
-  nome: string;
-  cpf_cnpj: string;
-  email: string;
-  telefone: string;
-  tipo: 'pessoa_fisica' | 'pessoa_juridica' | 'institucional';
-  tipo_investidor: string;
-}
-
-const steps = [
-  { id: 'dados', label: 'Dados Cadastrais', icon: User },
-  { id: 'kyc', label: 'KYC', icon: FileText },
+// Steps do wizard
+const STEPS = [
+  { id: 'identificacao', label: 'Identificação', icon: User },
+  { id: 'dados', label: 'Ficha Cadastral', icon: FileText },
   { id: 'suitability', label: 'Suitability', icon: CheckCircle },
   { id: 'documentos', label: 'Documentos', icon: Upload },
 ];
 
+type TipoInvestidor = 'pf' | 'pj' | 'institucional';
+
 export default function OnboardingPage() {
   const { token } = useParams<{ token: string }>();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  
   const [currentStep, setCurrentStep] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [investidor, setInvestidor] = useState<InvestidorData | null>(null);
+  const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   
-  // Form states
-  const [dadosForm, setDadosForm] = useState({
-    nome: '',
-    cpf_cnpj: '',
+  // Step 0: Identificação
+  const [tipo, setTipo] = useState<TipoInvestidor>('pf');
+  const [cpfCnpj, setCpfCnpj] = useState('');
+  const [checkStatus, setCheckStatus] = useState<'idle' | 'loading' | 'ok' | 'not_found' | 'expired'>('idle');
+  const [investidorExistente, setInvestidorExistente] = useState<any>(null);
+  
+  // Step 1: Ficha Cadastral - PF
+  const [dadosPF, setDadosPF] = useState({
+    nome_completo: '',
+    data_nascimento: '',
+    nacionalidade: 'Brasileira',
+    estado_civil: '',
+    profissao: '',
+    rg: '',
+    orgao_emissor: '',
     email: '',
     telefone: '',
-    tipo: 'pessoa_fisica' as const,
-    tipo_investidor: 'varejo',
-  });
-  
-  const [kycForm, setKycForm] = useState({
-    nacionalidade: 'brasileira',
-    estado_civil: 'solteiro',
-    profissao: '',
+    // Endereço
+    cep: '',
+    logradouro: '',
+    numero: '',
+    complemento: '',
+    bairro: '',
+    cidade: '',
+    estado: '',
+    // Financeiro
     renda_mensal: '',
-    patrimonio: '',
-    endereco: {
-      cep: '',
-      logradouro: '',
-      numero: '',
-      complemento: '',
-      bairro: '',
-      cidade: '',
-      estado: '',
-    },
+    patrimonio_total: '',
+    origem_recursos: '',
   });
   
-  const [suitabilityForm, setSuitabilityForm] = useState({
-    experiencia_investimentos: 'nenhuma',
-    tempo_investimento: 'menos_1_ano',
-    percentual_renda: 'ate_10',
-    tolerancia_risco: 'conservador',
-    objetivo_investimento: 'preservacao',
-    conhecimento_derivativos: false,
-    conhecimento_cambio: false,
-    conhecimento_renda_fixa: false,
-    conhecimento_renda_variavel: false,
+  // Step 1: Ficha Cadastral - PJ
+  const [dadosPJ, setDadosPJ] = useState({
+    razao_social: '',
+    nome_fantasia: '',
+    data_constituicao: '',
+    inscricao_estadual: '',
+    inscricao_municipal: '',
+    atividade_principal: '',
+    email: '',
+    telefone: '',
+    // Endereço
+    cep: '',
+    logradouro: '',
+    numero: '',
+    complemento: '',
+    bairro: '',
+    cidade: '',
+    estado: '',
+    // Representante Legal
+    rep_nome: '',
+    rep_cpf: '',
+    rep_cargo: '',
+    rep_email: '',
+    rep_telefone: '',
+    // Financeiro
+    faturamento_anual: '',
+    patrimonio_liquido: '',
+    origem_recursos: '',
   });
   
+  // Step 1: Ficha Cadastral - Institucional
+  const [dadosInstitucional, setDadosInstitucional] = useState({
+    razao_social: '',
+    tipo_instituicao: '', // Fundo, Asset, Family Office, etc
+    cnpj: '',
+    cvm_registro: '',
+    anbima_registro: '',
+    email: '',
+    telefone: '',
+    // Endereço
+    cep: '',
+    logradouro: '',
+    numero: '',
+    complemento: '',
+    bairro: '',
+    cidade: '',
+    estado: '',
+    // Gestor/Administrador
+    gestor_nome: '',
+    gestor_cnpj: '',
+    administrador_nome: '',
+    administrador_cnpj: '',
+    // Representante
+    rep_nome: '',
+    rep_cpf: '',
+    rep_cargo: '',
+    rep_email: '',
+    // Financeiro
+    patrimonio_liquido: '',
+    origem_recursos: '',
+  });
+  
+  // Step 2: Suitability
+  const [suitability, setSuitability] = useState({
+    q1_experiencia: '',
+    q2_tempo_investindo: '',
+    q3_conhecimento_rf: '',
+    q4_conhecimento_rv: '',
+    q5_conhecimento_derivativos: '',
+    q6_percentual_patrimonio: '',
+    q7_horizonte_investimento: '',
+    q8_objetivo_principal: '',
+    q9_tolerancia_perda: '',
+    q10_reacao_queda: '',
+    q11_necessidade_liquidez: '',
+    q12_ja_investiu_credito_privado: '',
+  });
+  
+  // Step 3: Documentos
   const [documentos, setDocumentos] = useState<{
-    rg_cpf?: File;
+    doc_identificacao?: File;
     comprovante_residencia?: File;
-    kyc_assinado?: File;
-    suitability_assinado?: File;
-    ficha_cadastral?: File;
+    comprovante_renda?: File;
+    contrato_social?: File;
+    procuracao?: File;
+    outros?: File[];
   }>({});
 
-  useEffect(() => {
-    if (token) {
-      buscarInvestidor();
+  // Formatar CPF/CNPJ
+  const formatarCpfCnpj = (valor: string) => {
+    const numeros = valor.replace(/\D/g, '');
+    if (numeros.length <= 11) {
+      return numeros
+        .replace(/(\d{3})(\d)/, '$1.$2')
+        .replace(/(\d{3})(\d)/, '$1.$2')
+        .replace(/(\d{3})(\d{1,2})$/, '$1-$2');
+    } else {
+      return numeros
+        .replace(/(\d{2})(\d)/, '$1.$2')
+        .replace(/(\d{3})(\d)/, '$1.$2')
+        .replace(/(\d{3})(\d)/, '$1/$2')
+        .replace(/(\d{4})(\d{1,2})$/, '$1-$2');
     }
-  }, [token]);
+  };
 
-  const buscarInvestidor = async () => {
+  // Verificar se investidor existe na base
+  const verificarInvestidor = async () => {
+    const numeros = cpfCnpj.replace(/\D/g, '');
+    if (numeros.length < 11) {
+      toast.error('CPF/CNPJ inválido');
+      return;
+    }
+    
+    setCheckStatus('loading');
+    
     try {
       const { data, error } = await supabase
-        .rpc('validar_token_onboarding', { p_token: token });
+        .from('investidores')
+        .select('*')
+        .eq('cpf_cnpj', numeros)
+        .maybeSingle();
       
-      if (error || !data) {
-        toast.error('Link inválido ou expirado');
-        navigate('/');
+      if (error) throw error;
+      
+      if (data) {
+        // Verificar se compliance está válido (menos de 1 ano)
+        const ultimaAtualizacao = new Date(data.atualizado_em || data.criado_em);
+        const umAnoAtras = new Date();
+        umAnoAtras.setFullYear(umAnoAtras.getFullYear() - 1);
+        
+        const complianceValido = data.status_onboarding === 'completo' && ultimaAtualizacao > umAnoAtras;
+        
+        if (complianceValido) {
+          setCheckStatus('ok');
+          setInvestidorExistente(data);
+          toast.success('Compliance válido encontrado!');
+        } else {
+          setCheckStatus('expired');
+          setInvestidorExistente(data);
+          toast.warning('Compliance expirado. Por favor, atualize seus dados.');
+        }
+      } else {
+        setCheckStatus('not_found');
+        toast.info('Novo cadastro. Por favor, preencha seus dados.');
+      }
+    } catch (err) {
+      console.error('Erro ao verificar:', err);
+      setCheckStatus('idle');
+      toast.error('Erro ao verificar. Tente novamente.');
+    }
+  };
+
+  // Avançar step
+  const handleNext = async () => {
+    if (currentStep === 0) {
+      // Verificar se precisa fazer compliance
+      if (checkStatus === 'ok') {
+        // Compliance OK - registrar vínculo e mostrar sucesso
+        await registrarVinculoEmissao('compliance_ok');
         return;
       }
       
-      setInvestidor(data);
-      setDadosForm({
-        nome: data.nome || '',
-        cpf_cnpj: data.cpf_cnpj || '',
-        email: data.email || '',
-        telefone: data.telefone || '',
-        tipo: data.tipo || 'pessoa_fisica',
-        tipo_investidor: data.tipo_investidor || 'varejo',
-      });
-    } catch (err) {
-      toast.error('Erro ao carregar dados');
-    } finally {
-      setLoading(false);
+      if (checkStatus === 'idle' || checkStatus === 'loading') {
+        toast.error('Por favor, verifique o CPF/CNPJ primeiro');
+        return;
+      }
+    }
+    
+    if (currentStep < STEPS.length - 1) {
+      setCurrentStep(currentStep + 1);
     }
   };
 
-  const handleFileChange = (tipo: string, file: File | null) => {
-    setDocumentos(prev => ({ ...prev, [tipo]: file || undefined }));
+  // Voltar step
+  const handleBack = () => {
+    if (currentStep > 0) {
+      setCurrentStep(currentStep - 1);
+    }
   };
 
-  const fazerUploadDocumento = async (tipo: string, file: File) => {
-    const fileName = `${investidor?.id}/${tipo}_${Date.now()}.${file.name.split('.').pop()}`;
-    
-    const { error: uploadError } = await supabase.storage
-      .from('documentos-investidores')
-      .upload(fileName, file);
-    
-    if (uploadError) throw uploadError;
-    
-    const { data: urlData } = supabase.storage
-      .from('documentos-investidores')
-      .getPublicUrl(fileName);
-    
-    await supabase.rpc('adicionar_documento_investidor', {
-      p_investidor_id: investidor?.id,
-      p_tipo_documento: tipo,
-      p_nome_arquivo: file.name,
-      p_url_arquivo: urlData.publicUrl,
-      p_mime_type: file.type,
-      p_tamanho_bytes: file.size,
-    });
+  // Registrar vínculo com a emissão
+  const registrarVinculoEmissao = async (status: string) => {
+    try {
+      // Buscar emissão pelo token
+      const { data: tokenData } = await supabase
+        .from('tokens_onboarding')
+        .select('emissao_id')
+        .eq('token', token)
+        .maybeSingle();
+      
+      if (tokenData?.emissao_id) {
+        await supabase
+          .from('investidor_emissao')
+          .upsert({
+            emissao_id: tokenData.emissao_id,
+            cnpj_cpf: cpfCnpj.replace(/\D/g, ''),
+            tipo: tipo,
+            status: status,
+            investidor_id: investidorExistente?.id,
+          });
+      }
+      
+      if (status === 'compliance_ok') {
+        toast.success('Cadastro confirmado! Compliance válido.');
+        navigate('/obrigado?status=ok');
+      }
+    } catch (err) {
+      console.error('Erro ao registrar vínculo:', err);
+    }
   };
 
+  // Submeter formulário completo
   const handleSubmit = async () => {
     setSubmitting(true);
     
     try {
-      // Salvar KYC e Suitability
-      await supabase.rpc('salvar_onboarding', {
-        p_id: investidor?.id,
-        p_kyc_json: kycForm,
-        p_suitability_json: suitabilityForm,
-        p_perfil_risco: calcularPerfilRisco(),
-      });
+      const numeros = cpfCnpj.replace(/\D/g, '');
       
-      // Upload documentos
-      for (const [tipo, file] of Object.entries(documentos)) {
-        if (file) {
-          await fazerUploadDocumento(tipo, file);
+      // Montar dados baseado no tipo
+      let dadosCadastrais = {};
+      if (tipo === 'pf') {
+        dadosCadastrais = dadosPF;
+      } else if (tipo === 'pj') {
+        dadosCadastrais = dadosPJ;
+      } else {
+        dadosCadastrais = dadosInstitucional;
+      }
+      
+      // Criar ou atualizar investidor
+      const investidorData = {
+        cpf_cnpj: numeros,
+        tipo: tipo === 'pf' ? 'pessoa_fisica' : tipo === 'pj' ? 'pessoa_juridica' : 'institucional',
+        nome: tipo === 'pf' ? dadosPF.nome_completo : tipo === 'pj' ? dadosPJ.razao_social : dadosInstitucional.razao_social,
+        email: tipo === 'pf' ? dadosPF.email : tipo === 'pj' ? dadosPJ.email : dadosInstitucional.email,
+        telefone: tipo === 'pf' ? dadosPF.telefone : tipo === 'pj' ? dadosPJ.telefone : dadosInstitucional.telefone,
+        dados_cadastrais: dadosCadastrais,
+        suitability: suitability,
+        status_onboarding: 'em_analise',
+        token_origem: token,
+      };
+      
+      const { data: investidor, error } = await supabase
+        .from('investidores')
+        .upsert(investidorData, { onConflict: 'cpf_cnpj' })
+        .select()
+        .single();
+      
+      if (error) throw error;
+      
+      // Upload de documentos
+      if (Object.keys(documentos).length > 0) {
+        for (const [tipo, arquivo] of Object.entries(documentos)) {
+          if (arquivo && arquivo instanceof File) {
+            const path = `investidores/${numeros}/${tipo}_${Date.now()}`;
+            await supabase.storage.from('documentos').upload(path, arquivo);
+            
+            // Registrar documento
+            await supabase.from('investidor_documentos').insert({
+              investidor_id: investidor.id,
+              tipo_documento: tipo,
+              arquivo_path: path,
+              status: 'pendente',
+            });
+          }
         }
       }
       
-      // Finalizar onboarding
-      await supabase.rpc('finalizar_onboarding', {
-        p_id: investidor?.id,
-      });
+      // Registrar vínculo com emissão
+      await registrarVinculoEmissao('em_analise');
       
-      toast.success('Cadastro enviado com sucesso!');
-      navigate('/obrigado');
+      toast.success('Cadastro enviado para análise!');
+      navigate('/obrigado?status=analise');
+      
     } catch (err: any) {
+      console.error('Erro ao submeter:', err);
       toast.error(err.message || 'Erro ao enviar cadastro');
     } finally {
       setSubmitting(false);
     }
   };
 
-  const calcularPerfilRisco = () => {
-    // Lógica simples baseada no suitability
-    if (suitabilityForm.tolerancia_risco === 'arrojado') return 'agressivo';
-    if (suitabilityForm.tolerancia_risco === 'moderado') return 'moderado';
-    return 'conservador';
-  };
+  // Render Step 0: Identificação
+  const renderIdentificacao = () => (
+    <Card className="shadow-lg">
+      <CardHeader>
+        <CardTitle>Identificação</CardTitle>
+        <CardDescription>
+          Informe seu CPF ou CNPJ para verificar se já possui cadastro.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        {/* Tipo */}
+        <div className="space-y-3">
+          <Label>Tipo de Investidor</Label>
+          <div className="grid grid-cols-3 gap-3">
+            {[
+              { value: 'pf', label: 'Pessoa Física', icon: User },
+              { value: 'pj', label: 'Pessoa Jurídica', icon: Building2 },
+              { value: 'institucional', label: 'Institucional', icon: Users },
+            ].map((opcao) => {
+              const Icon = opcao.icon;
+              return (
+                <Button
+                  key={opcao.value}
+                  type="button"
+                  variant={tipo === opcao.value ? 'default' : 'outline'}
+                  className="h-auto py-4 flex-col gap-2"
+                  onClick={() => {
+                    setTipo(opcao.value as TipoInvestidor);
+                    setCheckStatus('idle');
+                  }}
+                >
+                  <Icon className="h-6 w-6" />
+                  <span className="text-sm">{opcao.label}</span>
+                </Button>
+              );
+            })}
+          </div>
+        </div>
 
-  const canProceed = () => {
-    switch (currentStep) {
-      case 0:
-        return dadosForm.nome && dadosForm.cpf_cnpj && dadosForm.email && dadosForm.telefone;
-      case 1:
-        return kycForm.profissao && kycForm.renda_mensal && kycForm.endereco.cep;
-      case 2:
-        return suitabilityForm.experiencia_investimentos && suitabilityForm.tolerancia_risco;
-      case 3:
-        return documentos.rg_cpf && documentos.comprovante_residencia;
-      default:
-        return true;
-    }
-  };
+        {/* CPF/CNPJ */}
+        <div className="space-y-2">
+          <Label>{tipo === 'pf' ? 'CPF' : 'CNPJ'} *</Label>
+          <div className="flex gap-2">
+            <Input 
+              value={cpfCnpj}
+              onChange={(e) => {
+                setCpfCnpj(formatarCpfCnpj(e.target.value));
+                setCheckStatus('idle');
+              }}
+              placeholder={tipo === 'pf' ? '000.000.000-00' : '00.000.000/0000-00'}
+              maxLength={tipo === 'pf' ? 14 : 18}
+              className={`text-lg ${
+                checkStatus === 'ok' ? 'border-green-500 bg-green-50' :
+                checkStatus === 'expired' ? 'border-amber-500 bg-amber-50' :
+                checkStatus === 'not_found' ? 'border-blue-500 bg-blue-50' : ''
+              }`}
+            />
+            <Button 
+              onClick={verificarInvestidor}
+              disabled={checkStatus === 'loading' || cpfCnpj.replace(/\D/g, '').length < 11}
+            >
+              {checkStatus === 'loading' ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                'Verificar'
+              )}
+            </Button>
+          </div>
+        </div>
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin" />
-      </div>
-    );
-  }
+        {/* Status */}
+        {checkStatus === 'ok' && (
+          <motion.div 
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="p-4 bg-green-50 border border-green-200 rounded-lg"
+          >
+            <div className="flex items-start gap-3">
+              <CheckCircle className="h-5 w-5 text-green-600 mt-0.5" />
+              <div>
+                <p className="font-medium text-green-800">Compliance Válido!</p>
+                <p className="text-sm text-green-700 mt-1">
+                  {investidorExistente?.nome}
+                </p>
+                <p className="text-xs text-green-600 mt-1">
+                  Último update: {new Date(investidorExistente?.atualizado_em).toLocaleDateString('pt-BR')}
+                </p>
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        {checkStatus === 'expired' && (
+          <motion.div 
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="p-4 bg-amber-50 border border-amber-200 rounded-lg"
+          >
+            <div className="flex items-start gap-3">
+              <AlertCircle className="h-5 w-5 text-amber-600 mt-0.5" />
+              <div>
+                <p className="font-medium text-amber-800">Compliance Expirado</p>
+                <p className="text-sm text-amber-700 mt-1">
+                  Seu cadastro está desatualizado (mais de 1 ano). Por favor, atualize seus dados.
+                </p>
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        {checkStatus === 'not_found' && (
+          <motion.div 
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="p-4 bg-blue-50 border border-blue-200 rounded-lg"
+          >
+            <div className="flex items-start gap-3">
+              <User className="h-5 w-5 text-blue-600 mt-0.5" />
+              <div>
+                <p className="font-medium text-blue-800">Novo Cadastro</p>
+                <p className="text-sm text-blue-700 mt-1">
+                  Não encontramos seu cadastro. Clique em "Próximo" para preencher seus dados.
+                </p>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </CardContent>
+    </Card>
+  );
+
+  // Render Step 1: Ficha Cadastral PF
+  const renderFichaPF = () => (
+    <Card className="shadow-lg">
+      <CardHeader>
+        <CardTitle>Ficha Cadastral - Pessoa Física</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        {/* Dados Pessoais */}
+        <div className="space-y-4">
+          <h3 className="font-medium text-slate-700 border-b pb-2">Dados Pessoais</h3>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="col-span-2 space-y-2">
+              <Label>Nome Completo *</Label>
+              <Input 
+                value={dadosPF.nome_completo}
+                onChange={(e) => setDadosPF({...dadosPF, nome_completo: e.target.value})}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Data de Nascimento *</Label>
+              <Input 
+                type="date"
+                value={dadosPF.data_nascimento}
+                onChange={(e) => setDadosPF({...dadosPF, data_nascimento: e.target.value})}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Nacionalidade</Label>
+              <Input 
+                value={dadosPF.nacionalidade}
+                onChange={(e) => setDadosPF({...dadosPF, nacionalidade: e.target.value})}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Estado Civil</Label>
+              <Select value={dadosPF.estado_civil} onValueChange={(v) => setDadosPF({...dadosPF, estado_civil: v})}>
+                <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="solteiro">Solteiro(a)</SelectItem>
+                  <SelectItem value="casado">Casado(a)</SelectItem>
+                  <SelectItem value="divorciado">Divorciado(a)</SelectItem>
+                  <SelectItem value="viuvo">Viúvo(a)</SelectItem>
+                  <SelectItem value="uniao_estavel">União Estável</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Profissão *</Label>
+              <Input 
+                value={dadosPF.profissao}
+                onChange={(e) => setDadosPF({...dadosPF, profissao: e.target.value})}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>RG *</Label>
+              <Input 
+                value={dadosPF.rg}
+                onChange={(e) => setDadosPF({...dadosPF, rg: e.target.value})}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Órgão Emissor</Label>
+              <Input 
+                value={dadosPF.orgao_emissor}
+                onChange={(e) => setDadosPF({...dadosPF, orgao_emissor: e.target.value})}
+                placeholder="SSP/SP"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Contato */}
+        <div className="space-y-4">
+          <h3 className="font-medium text-slate-700 border-b pb-2">Contato</h3>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Email *</Label>
+              <Input 
+                type="email"
+                value={dadosPF.email}
+                onChange={(e) => setDadosPF({...dadosPF, email: e.target.value})}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Telefone *</Label>
+              <Input 
+                value={dadosPF.telefone}
+                onChange={(e) => setDadosPF({...dadosPF, telefone: e.target.value})}
+                placeholder="(00) 00000-0000"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Endereço */}
+        <div className="space-y-4">
+          <h3 className="font-medium text-slate-700 border-b pb-2">Endereço</h3>
+          <div className="grid grid-cols-4 gap-4">
+            <div className="space-y-2">
+              <Label>CEP *</Label>
+              <Input 
+                value={dadosPF.cep}
+                onChange={(e) => setDadosPF({...dadosPF, cep: e.target.value})}
+                placeholder="00000-000"
+              />
+            </div>
+            <div className="col-span-2 space-y-2">
+              <Label>Logradouro *</Label>
+              <Input 
+                value={dadosPF.logradouro}
+                onChange={(e) => setDadosPF({...dadosPF, logradouro: e.target.value})}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Número *</Label>
+              <Input 
+                value={dadosPF.numero}
+                onChange={(e) => setDadosPF({...dadosPF, numero: e.target.value})}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Complemento</Label>
+              <Input 
+                value={dadosPF.complemento}
+                onChange={(e) => setDadosPF({...dadosPF, complemento: e.target.value})}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Bairro *</Label>
+              <Input 
+                value={dadosPF.bairro}
+                onChange={(e) => setDadosPF({...dadosPF, bairro: e.target.value})}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Cidade *</Label>
+              <Input 
+                value={dadosPF.cidade}
+                onChange={(e) => setDadosPF({...dadosPF, cidade: e.target.value})}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Estado *</Label>
+              <Select value={dadosPF.estado} onValueChange={(v) => setDadosPF({...dadosPF, estado: v})}>
+                <SelectTrigger><SelectValue placeholder="UF" /></SelectTrigger>
+                <SelectContent>
+                  {['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'].map(uf => (
+                    <SelectItem key={uf} value={uf}>{uf}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </div>
+
+        {/* Informações Financeiras */}
+        <div className="space-y-4">
+          <h3 className="font-medium text-slate-700 border-b pb-2">Informações Financeiras</h3>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Renda Mensal *</Label>
+              <Select value={dadosPF.renda_mensal} onValueChange={(v) => setDadosPF({...dadosPF, renda_mensal: v})}>
+                <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ate_5k">Até R$ 5.000</SelectItem>
+                  <SelectItem value="5k_10k">R$ 5.000 a R$ 10.000</SelectItem>
+                  <SelectItem value="10k_20k">R$ 10.000 a R$ 20.000</SelectItem>
+                  <SelectItem value="20k_50k">R$ 20.000 a R$ 50.000</SelectItem>
+                  <SelectItem value="acima_50k">Acima de R$ 50.000</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Patrimônio Total *</Label>
+              <Select value={dadosPF.patrimonio_total} onValueChange={(v) => setDadosPF({...dadosPF, patrimonio_total: v})}>
+                <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ate_100k">Até R$ 100.000</SelectItem>
+                  <SelectItem value="100k_500k">R$ 100.000 a R$ 500.000</SelectItem>
+                  <SelectItem value="500k_1m">R$ 500.000 a R$ 1.000.000</SelectItem>
+                  <SelectItem value="1m_5m">R$ 1.000.000 a R$ 5.000.000</SelectItem>
+                  <SelectItem value="acima_5m">Acima de R$ 5.000.000</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="col-span-2 space-y-2">
+              <Label>Origem dos Recursos *</Label>
+              <Textarea 
+                value={dadosPF.origem_recursos}
+                onChange={(e) => setDadosPF({...dadosPF, origem_recursos: e.target.value})}
+                placeholder="Descreva a origem dos recursos (salário, herança, venda de imóvel, etc.)"
+              />
+            </div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+
+  // Render Step 1: Ficha Cadastral PJ
+  const renderFichaPJ = () => (
+    <Card className="shadow-lg">
+      <CardHeader>
+        <CardTitle>Ficha Cadastral - Pessoa Jurídica</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        {/* Dados da Empresa */}
+        <div className="space-y-4">
+          <h3 className="font-medium text-slate-700 border-b pb-2">Dados da Empresa</h3>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="col-span-2 space-y-2">
+              <Label>Razão Social *</Label>
+              <Input 
+                value={dadosPJ.razao_social}
+                onChange={(e) => setDadosPJ({...dadosPJ, razao_social: e.target.value})}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Nome Fantasia</Label>
+              <Input 
+                value={dadosPJ.nome_fantasia}
+                onChange={(e) => setDadosPJ({...dadosPJ, nome_fantasia: e.target.value})}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Data de Constituição *</Label>
+              <Input 
+                type="date"
+                value={dadosPJ.data_constituicao}
+                onChange={(e) => setDadosPJ({...dadosPJ, data_constituicao: e.target.value})}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Inscrição Estadual</Label>
+              <Input 
+                value={dadosPJ.inscricao_estadual}
+                onChange={(e) => setDadosPJ({...dadosPJ, inscricao_estadual: e.target.value})}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Inscrição Municipal</Label>
+              <Input 
+                value={dadosPJ.inscricao_municipal}
+                onChange={(e) => setDadosPJ({...dadosPJ, inscricao_municipal: e.target.value})}
+              />
+            </div>
+            <div className="col-span-2 space-y-2">
+              <Label>Atividade Principal *</Label>
+              <Input 
+                value={dadosPJ.atividade_principal}
+                onChange={(e) => setDadosPJ({...dadosPJ, atividade_principal: e.target.value})}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Contato */}
+        <div className="space-y-4">
+          <h3 className="font-medium text-slate-700 border-b pb-2">Contato</h3>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Email *</Label>
+              <Input 
+                type="email"
+                value={dadosPJ.email}
+                onChange={(e) => setDadosPJ({...dadosPJ, email: e.target.value})}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Telefone *</Label>
+              <Input 
+                value={dadosPJ.telefone}
+                onChange={(e) => setDadosPJ({...dadosPJ, telefone: e.target.value})}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Endereço */}
+        <div className="space-y-4">
+          <h3 className="font-medium text-slate-700 border-b pb-2">Endereço</h3>
+          <div className="grid grid-cols-4 gap-4">
+            <div className="space-y-2">
+              <Label>CEP *</Label>
+              <Input 
+                value={dadosPJ.cep}
+                onChange={(e) => setDadosPJ({...dadosPJ, cep: e.target.value})}
+              />
+            </div>
+            <div className="col-span-2 space-y-2">
+              <Label>Logradouro *</Label>
+              <Input 
+                value={dadosPJ.logradouro}
+                onChange={(e) => setDadosPJ({...dadosPJ, logradouro: e.target.value})}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Número *</Label>
+              <Input 
+                value={dadosPJ.numero}
+                onChange={(e) => setDadosPJ({...dadosPJ, numero: e.target.value})}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Complemento</Label>
+              <Input 
+                value={dadosPJ.complemento}
+                onChange={(e) => setDadosPJ({...dadosPJ, complemento: e.target.value})}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Bairro *</Label>
+              <Input 
+                value={dadosPJ.bairro}
+                onChange={(e) => setDadosPJ({...dadosPJ, bairro: e.target.value})}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Cidade *</Label>
+              <Input 
+                value={dadosPJ.cidade}
+                onChange={(e) => setDadosPJ({...dadosPJ, cidade: e.target.value})}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Estado *</Label>
+              <Select value={dadosPJ.estado} onValueChange={(v) => setDadosPJ({...dadosPJ, estado: v})}>
+                <SelectTrigger><SelectValue placeholder="UF" /></SelectTrigger>
+                <SelectContent>
+                  {['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'].map(uf => (
+                    <SelectItem key={uf} value={uf}>{uf}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </div>
+
+        {/* Representante Legal */}
+        <div className="space-y-4">
+          <h3 className="font-medium text-slate-700 border-b pb-2">Representante Legal</h3>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Nome Completo *</Label>
+              <Input 
+                value={dadosPJ.rep_nome}
+                onChange={(e) => setDadosPJ({...dadosPJ, rep_nome: e.target.value})}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>CPF *</Label>
+              <Input 
+                value={dadosPJ.rep_cpf}
+                onChange={(e) => setDadosPJ({...dadosPJ, rep_cpf: e.target.value})}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Cargo *</Label>
+              <Input 
+                value={dadosPJ.rep_cargo}
+                onChange={(e) => setDadosPJ({...dadosPJ, rep_cargo: e.target.value})}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Email *</Label>
+              <Input 
+                type="email"
+                value={dadosPJ.rep_email}
+                onChange={(e) => setDadosPJ({...dadosPJ, rep_email: e.target.value})}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Informações Financeiras */}
+        <div className="space-y-4">
+          <h3 className="font-medium text-slate-700 border-b pb-2">Informações Financeiras</h3>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Faturamento Anual *</Label>
+              <Select value={dadosPJ.faturamento_anual} onValueChange={(v) => setDadosPJ({...dadosPJ, faturamento_anual: v})}>
+                <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ate_1m">Até R$ 1.000.000</SelectItem>
+                  <SelectItem value="1m_10m">R$ 1.000.000 a R$ 10.000.000</SelectItem>
+                  <SelectItem value="10m_50m">R$ 10.000.000 a R$ 50.000.000</SelectItem>
+                  <SelectItem value="50m_100m">R$ 50.000.000 a R$ 100.000.000</SelectItem>
+                  <SelectItem value="acima_100m">Acima de R$ 100.000.000</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Patrimônio Líquido *</Label>
+              <Select value={dadosPJ.patrimonio_liquido} onValueChange={(v) => setDadosPJ({...dadosPJ, patrimonio_liquido: v})}>
+                <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ate_1m">Até R$ 1.000.000</SelectItem>
+                  <SelectItem value="1m_10m">R$ 1.000.000 a R$ 10.000.000</SelectItem>
+                  <SelectItem value="10m_50m">R$ 10.000.000 a R$ 50.000.000</SelectItem>
+                  <SelectItem value="acima_50m">Acima de R$ 50.000.000</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="col-span-2 space-y-2">
+              <Label>Origem dos Recursos *</Label>
+              <Textarea 
+                value={dadosPJ.origem_recursos}
+                onChange={(e) => setDadosPJ({...dadosPJ, origem_recursos: e.target.value})}
+                placeholder="Descreva a origem dos recursos"
+              />
+            </div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+
+  // Render Step 1: Ficha Cadastral Institucional
+  const renderFichaInstitucional = () => (
+    <Card className="shadow-lg">
+      <CardHeader>
+        <CardTitle>Ficha Cadastral - Investidor Institucional</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        {/* Dados da Instituição */}
+        <div className="space-y-4">
+          <h3 className="font-medium text-slate-700 border-b pb-2">Dados da Instituição</h3>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="col-span-2 space-y-2">
+              <Label>Razão Social *</Label>
+              <Input 
+                value={dadosInstitucional.razao_social}
+                onChange={(e) => setDadosInstitucional({...dadosInstitucional, razao_social: e.target.value})}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Tipo de Instituição *</Label>
+              <Select value={dadosInstitucional.tipo_instituicao} onValueChange={(v) => setDadosInstitucional({...dadosInstitucional, tipo_instituicao: v})}>
+                <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="fundo_investimento">Fundo de Investimento</SelectItem>
+                  <SelectItem value="asset_management">Asset Management</SelectItem>
+                  <SelectItem value="family_office">Family Office</SelectItem>
+                  <SelectItem value="banco">Banco</SelectItem>
+                  <SelectItem value="seguradora">Seguradora</SelectItem>
+                  <SelectItem value="previdencia">Entidade de Previdência</SelectItem>
+                  <SelectItem value="outro">Outro</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Registro CVM</Label>
+              <Input 
+                value={dadosInstitucional.cvm_registro}
+                onChange={(e) => setDadosInstitucional({...dadosInstitucional, cvm_registro: e.target.value})}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Registro ANBIMA</Label>
+              <Input 
+                value={dadosInstitucional.anbima_registro}
+                onChange={(e) => setDadosInstitucional({...dadosInstitucional, anbima_registro: e.target.value})}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Contato */}
+        <div className="space-y-4">
+          <h3 className="font-medium text-slate-700 border-b pb-2">Contato</h3>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Email *</Label>
+              <Input 
+                type="email"
+                value={dadosInstitucional.email}
+                onChange={(e) => setDadosInstitucional({...dadosInstitucional, email: e.target.value})}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Telefone *</Label>
+              <Input 
+                value={dadosInstitucional.telefone}
+                onChange={(e) => setDadosInstitucional({...dadosInstitucional, telefone: e.target.value})}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Endereço */}
+        <div className="space-y-4">
+          <h3 className="font-medium text-slate-700 border-b pb-2">Endereço</h3>
+          <div className="grid grid-cols-4 gap-4">
+            <div className="space-y-2">
+              <Label>CEP *</Label>
+              <Input 
+                value={dadosInstitucional.cep}
+                onChange={(e) => setDadosInstitucional({...dadosInstitucional, cep: e.target.value})}
+              />
+            </div>
+            <div className="col-span-2 space-y-2">
+              <Label>Logradouro *</Label>
+              <Input 
+                value={dadosInstitucional.logradouro}
+                onChange={(e) => setDadosInstitucional({...dadosInstitucional, logradouro: e.target.value})}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Número *</Label>
+              <Input 
+                value={dadosInstitucional.numero}
+                onChange={(e) => setDadosInstitucional({...dadosInstitucional, numero: e.target.value})}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Complemento</Label>
+              <Input 
+                value={dadosInstitucional.complemento}
+                onChange={(e) => setDadosInstitucional({...dadosInstitucional, complemento: e.target.value})}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Bairro *</Label>
+              <Input 
+                value={dadosInstitucional.bairro}
+                onChange={(e) => setDadosInstitucional({...dadosInstitucional, bairro: e.target.value})}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Cidade *</Label>
+              <Input 
+                value={dadosInstitucional.cidade}
+                onChange={(e) => setDadosInstitucional({...dadosInstitucional, cidade: e.target.value})}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Estado *</Label>
+              <Select value={dadosInstitucional.estado} onValueChange={(v) => setDadosInstitucional({...dadosInstitucional, estado: v})}>
+                <SelectTrigger><SelectValue placeholder="UF" /></SelectTrigger>
+                <SelectContent>
+                  {['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'].map(uf => (
+                    <SelectItem key={uf} value={uf}>{uf}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </div>
+
+        {/* Gestor/Administrador */}
+        <div className="space-y-4">
+          <h3 className="font-medium text-slate-700 border-b pb-2">Gestor / Administrador</h3>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Nome do Gestor</Label>
+              <Input 
+                value={dadosInstitucional.gestor_nome}
+                onChange={(e) => setDadosInstitucional({...dadosInstitucional, gestor_nome: e.target.value})}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>CNPJ do Gestor</Label>
+              <Input 
+                value={dadosInstitucional.gestor_cnpj}
+                onChange={(e) => setDadosInstitucional({...dadosInstitucional, gestor_cnpj: e.target.value})}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Nome do Administrador</Label>
+              <Input 
+                value={dadosInstitucional.administrador_nome}
+                onChange={(e) => setDadosInstitucional({...dadosInstitucional, administrador_nome: e.target.value})}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>CNPJ do Administrador</Label>
+              <Input 
+                value={dadosInstitucional.administrador_cnpj}
+                onChange={(e) => setDadosInstitucional({...dadosInstitucional, administrador_cnpj: e.target.value})}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Representante */}
+        <div className="space-y-4">
+          <h3 className="font-medium text-slate-700 border-b pb-2">Representante</h3>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Nome Completo *</Label>
+              <Input 
+                value={dadosInstitucional.rep_nome}
+                onChange={(e) => setDadosInstitucional({...dadosInstitucional, rep_nome: e.target.value})}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>CPF *</Label>
+              <Input 
+                value={dadosInstitucional.rep_cpf}
+                onChange={(e) => setDadosInstitucional({...dadosInstitucional, rep_cpf: e.target.value})}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Cargo *</Label>
+              <Input 
+                value={dadosInstitucional.rep_cargo}
+                onChange={(e) => setDadosInstitucional({...dadosInstitucional, rep_cargo: e.target.value})}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Email *</Label>
+              <Input 
+                type="email"
+                value={dadosInstitucional.rep_email}
+                onChange={(e) => setDadosInstitucional({...dadosInstitucional, rep_email: e.target.value})}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Informações Financeiras */}
+        <div className="space-y-4">
+          <h3 className="font-medium text-slate-700 border-b pb-2">Informações Financeiras</h3>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Patrimônio Líquido *</Label>
+              <Select value={dadosInstitucional.patrimonio_liquido} onValueChange={(v) => setDadosInstitucional({...dadosInstitucional, patrimonio_liquido: v})}>
+                <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ate_10m">Até R$ 10.000.000</SelectItem>
+                  <SelectItem value="10m_50m">R$ 10.000.000 a R$ 50.000.000</SelectItem>
+                  <SelectItem value="50m_100m">R$ 50.000.000 a R$ 100.000.000</SelectItem>
+                  <SelectItem value="100m_500m">R$ 100.000.000 a R$ 500.000.000</SelectItem>
+                  <SelectItem value="acima_500m">Acima de R$ 500.000.000</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="col-span-2 space-y-2">
+              <Label>Origem dos Recursos *</Label>
+              <Textarea 
+                value={dadosInstitucional.origem_recursos}
+                onChange={(e) => setDadosInstitucional({...dadosInstitucional, origem_recursos: e.target.value})}
+                placeholder="Descreva a origem dos recursos"
+              />
+            </div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+
+  // Render Step 2: Suitability
+  const renderSuitability = () => (
+    <Card className="shadow-lg">
+      <CardHeader>
+        <CardTitle>Análise de Perfil de Investidor (Suitability)</CardTitle>
+        <CardDescription>
+          Responda as perguntas abaixo para determinar seu perfil de investidor.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        {/* Q1 */}
+        <div className="space-y-3">
+          <Label className="text-base">1. Qual sua experiência com investimentos?</Label>
+          <RadioGroup value={suitability.q1_experiencia} onValueChange={(v) => setSuitability({...suitability, q1_experiencia: v})}>
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="nenhuma" id="q1_a" />
+              <Label htmlFor="q1_a">Nenhuma experiência</Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="pouca" id="q1_b" />
+              <Label htmlFor="q1_b">Pouca experiência (poupança, CDB)</Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="moderada" id="q1_c" />
+              <Label htmlFor="q1_c">Experiência moderada (fundos, ações)</Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="ampla" id="q1_d" />
+              <Label htmlFor="q1_d">Ampla experiência (derivativos, produtos estruturados)</Label>
+            </div>
+          </RadioGroup>
+        </div>
+
+        {/* Q2 */}
+        <div className="space-y-3">
+          <Label className="text-base">2. Há quanto tempo você investe?</Label>
+          <RadioGroup value={suitability.q2_tempo_investindo} onValueChange={(v) => setSuitability({...suitability, q2_tempo_investindo: v})}>
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="nunca" id="q2_a" />
+              <Label htmlFor="q2_a">Nunca investi</Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="menos_1" id="q2_b" />
+              <Label htmlFor="q2_b">Menos de 1 ano</Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="1_3" id="q2_c" />
+              <Label htmlFor="q2_c">Entre 1 e 3 anos</Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="3_5" id="q2_d" />
+              <Label htmlFor="q2_d">Entre 3 e 5 anos</Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="mais_5" id="q2_e" />
+              <Label htmlFor="q2_e">Mais de 5 anos</Label>
+            </div>
+          </RadioGroup>
+        </div>
+
+        {/* Q3 */}
+        <div className="space-y-3">
+          <Label className="text-base">3. Qual seu conhecimento sobre Renda Fixa?</Label>
+          <RadioGroup value={suitability.q3_conhecimento_rf} onValueChange={(v) => setSuitability({...suitability, q3_conhecimento_rf: v})}>
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="nenhum" id="q3_a" />
+              <Label htmlFor="q3_a">Nenhum</Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="basico" id="q3_b" />
+              <Label htmlFor="q3_b">Básico</Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="intermediario" id="q3_c" />
+              <Label htmlFor="q3_c">Intermediário</Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="avancado" id="q3_d" />
+              <Label htmlFor="q3_d">Avançado</Label>
+            </div>
+          </RadioGroup>
+        </div>
+
+        {/* Q4 */}
+        <div className="space-y-3">
+          <Label className="text-base">4. Qual seu conhecimento sobre Renda Variável?</Label>
+          <RadioGroup value={suitability.q4_conhecimento_rv} onValueChange={(v) => setSuitability({...suitability, q4_conhecimento_rv: v})}>
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="nenhum" id="q4_a" />
+              <Label htmlFor="q4_a">Nenhum</Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="basico" id="q4_b" />
+              <Label htmlFor="q4_b">Básico</Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="intermediario" id="q4_c" />
+              <Label htmlFor="q4_c">Intermediário</Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="avancado" id="q4_d" />
+              <Label htmlFor="q4_d">Avançado</Label>
+            </div>
+          </RadioGroup>
+        </div>
+
+        {/* Q5 */}
+        <div className="space-y-3">
+          <Label className="text-base">5. Qual seu conhecimento sobre Derivativos?</Label>
+          <RadioGroup value={suitability.q5_conhecimento_derivativos} onValueChange={(v) => setSuitability({...suitability, q5_conhecimento_derivativos: v})}>
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="nenhum" id="q5_a" />
+              <Label htmlFor="q5_a">Nenhum</Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="basico" id="q5_b" />
+              <Label htmlFor="q5_b">Básico</Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="intermediario" id="q5_c" />
+              <Label htmlFor="q5_c">Intermediário</Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="avancado" id="q5_d" />
+              <Label htmlFor="q5_d">Avançado</Label>
+            </div>
+          </RadioGroup>
+        </div>
+
+        {/* Q6 */}
+        <div className="space-y-3">
+          <Label className="text-base">6. Qual percentual do seu patrimônio você pretende investir?</Label>
+          <RadioGroup value={suitability.q6_percentual_patrimonio} onValueChange={(v) => setSuitability({...suitability, q6_percentual_patrimonio: v})}>
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="ate_10" id="q6_a" />
+              <Label htmlFor="q6_a">Até 10%</Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="10_25" id="q6_b" />
+              <Label htmlFor="q6_b">Entre 10% e 25%</Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="25_50" id="q6_c" />
+              <Label htmlFor="q6_c">Entre 25% e 50%</Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="mais_50" id="q6_d" />
+              <Label htmlFor="q6_d">Mais de 50%</Label>
+            </div>
+          </RadioGroup>
+        </div>
+
+        {/* Q7 */}
+        <div className="space-y-3">
+          <Label className="text-base">7. Qual seu horizonte de investimento?</Label>
+          <RadioGroup value={suitability.q7_horizonte_investimento} onValueChange={(v) => setSuitability({...suitability, q7_horizonte_investimento: v})}>
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="curto" id="q7_a" />
+              <Label htmlFor="q7_a">Curto prazo (até 1 ano)</Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="medio" id="q7_b" />
+              <Label htmlFor="q7_b">Médio prazo (1 a 5 anos)</Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="longo" id="q7_c" />
+              <Label htmlFor="q7_c">Longo prazo (mais de 5 anos)</Label>
+            </div>
+          </RadioGroup>
+        </div>
+
+        {/* Q8 */}
+        <div className="space-y-3">
+          <Label className="text-base">8. Qual seu principal objetivo ao investir?</Label>
+          <RadioGroup value={suitability.q8_objetivo_principal} onValueChange={(v) => setSuitability({...suitability, q8_objetivo_principal: v})}>
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="preservacao" id="q8_a" />
+              <Label htmlFor="q8_a">Preservação de capital</Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="renda" id="q8_b" />
+              <Label htmlFor="q8_b">Geração de renda</Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="crescimento" id="q8_c" />
+              <Label htmlFor="q8_c">Crescimento de capital</Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="especulacao" id="q8_d" />
+              <Label htmlFor="q8_d">Especulação</Label>
+            </div>
+          </RadioGroup>
+        </div>
+
+        {/* Q9 */}
+        <div className="space-y-3">
+          <Label className="text-base">9. Qual sua tolerância a perdas?</Label>
+          <RadioGroup value={suitability.q9_tolerancia_perda} onValueChange={(v) => setSuitability({...suitability, q9_tolerancia_perda: v})}>
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="nenhuma" id="q9_a" />
+              <Label htmlFor="q9_a">Não aceito perdas</Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="baixa" id="q9_b" />
+              <Label htmlFor="q9_b">Aceito perdas de até 5%</Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="moderada" id="q9_c" />
+              <Label htmlFor="q9_c">Aceito perdas de até 15%</Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="alta" id="q9_d" />
+              <Label htmlFor="q9_d">Aceito perdas de até 30%</Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="muito_alta" id="q9_e" />
+              <Label htmlFor="q9_e">Aceito perdas acima de 30%</Label>
+            </div>
+          </RadioGroup>
+        </div>
+
+        {/* Q10 */}
+        <div className="space-y-3">
+          <Label className="text-base">10. Como você reagiria a uma queda de 20% no valor do investimento?</Label>
+          <RadioGroup value={suitability.q10_reacao_queda} onValueChange={(v) => setSuitability({...suitability, q10_reacao_queda: v})}>
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="venderia_tudo" id="q10_a" />
+              <Label htmlFor="q10_a">Venderia tudo imediatamente</Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="venderia_parte" id="q10_b" />
+              <Label htmlFor="q10_b">Venderia parte para reduzir exposição</Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="manteria" id="q10_c" />
+              <Label htmlFor="q10_c">Manteria a posição</Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="compraria_mais" id="q10_d" />
+              <Label htmlFor="q10_d">Aproveitaria para comprar mais</Label>
+            </div>
+          </RadioGroup>
+        </div>
+
+        {/* Q11 */}
+        <div className="space-y-3">
+          <Label className="text-base">11. Qual sua necessidade de liquidez?</Label>
+          <RadioGroup value={suitability.q11_necessidade_liquidez} onValueChange={(v) => setSuitability({...suitability, q11_necessidade_liquidez: v})}>
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="imediata" id="q11_a" />
+              <Label htmlFor="q11_a">Preciso de liquidez imediata</Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="curto" id="q11_b" />
+              <Label htmlFor="q11_b">Posso aguardar até 6 meses</Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="medio" id="q11_c" />
+              <Label htmlFor="q11_c">Posso aguardar de 6 meses a 2 anos</Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="longo" id="q11_d" />
+              <Label htmlFor="q11_d">Não tenho necessidade de liquidez</Label>
+            </div>
+          </RadioGroup>
+        </div>
+
+        {/* Q12 */}
+        <div className="space-y-3">
+          <Label className="text-base">12. Você já investiu em crédito privado (CRI, CRA, Debêntures)?</Label>
+          <RadioGroup value={suitability.q12_ja_investiu_credito_privado} onValueChange={(v) => setSuitability({...suitability, q12_ja_investiu_credito_privado: v})}>
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="nao" id="q12_a" />
+              <Label htmlFor="q12_a">Não, nunca investi</Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="sim_pouco" id="q12_b" />
+              <Label htmlFor="q12_b">Sim, em pequena quantidade</Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="sim_regular" id="q12_c" />
+              <Label htmlFor="q12_c">Sim, invisto regularmente</Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="sim_majoritario" id="q12_d" />
+              <Label htmlFor="q12_d">Sim, é a maior parte da minha carteira</Label>
+            </div>
+          </RadioGroup>
+        </div>
+      </CardContent>
+    </Card>
+  );
+
+  // Render Step 3: Documentos
+  const renderDocumentos = () => (
+    <Card className="shadow-lg">
+      <CardHeader>
+        <CardTitle>Documentos</CardTitle>
+        <CardDescription>
+          Envie os documentos necessários para validação do cadastro.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        {/* Documento de Identificação */}
+        <div className="space-y-2">
+          <Label>Documento de Identificação (RG/CNH) *</Label>
+          <Input 
+            type="file"
+            accept=".pdf,.jpg,.jpeg,.png"
+            onChange={(e) => setDocumentos({...documentos, doc_identificacao: e.target.files?.[0]})}
+          />
+          <p className="text-xs text-slate-500">PDF, JPG ou PNG. Máx 5MB.</p>
+        </div>
+
+        {/* Comprovante de Residência */}
+        <div className="space-y-2">
+          <Label>Comprovante de Residência *</Label>
+          <Input 
+            type="file"
+            accept=".pdf,.jpg,.jpeg,.png"
+            onChange={(e) => setDocumentos({...documentos, comprovante_residencia: e.target.files?.[0]})}
+          />
+          <p className="text-xs text-slate-500">Conta de luz, água, telefone ou banco. Máx 90 dias.</p>
+        </div>
+
+        {/* Comprovante de Renda */}
+        <div className="space-y-2">
+          <Label>Comprovante de Renda</Label>
+          <Input 
+            type="file"
+            accept=".pdf,.jpg,.jpeg,.png"
+            onChange={(e) => setDocumentos({...documentos, comprovante_renda: e.target.files?.[0]})}
+          />
+          <p className="text-xs text-slate-500">Holerite, IR ou extrato bancário.</p>
+        </div>
+
+        {/* PJ: Contrato Social */}
+        {(tipo === 'pj' || tipo === 'institucional') && (
+          <div className="space-y-2">
+            <Label>Contrato Social / Estatuto *</Label>
+            <Input 
+              type="file"
+              accept=".pdf"
+              onChange={(e) => setDocumentos({...documentos, contrato_social: e.target.files?.[0]})}
+            />
+          </div>
+        )}
+
+        {/* PJ: Procuração */}
+        {(tipo === 'pj' || tipo === 'institucional') && (
+          <div className="space-y-2">
+            <Label>Procuração (se aplicável)</Label>
+            <Input 
+              type="file"
+              accept=".pdf"
+              onChange={(e) => setDocumentos({...documentos, procuracao: e.target.files?.[0]})}
+            />
+          </div>
+        )}
+
+        {/* Aviso */}
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+          <div className="flex items-start gap-2">
+            <AlertCircle className="h-5 w-5 text-amber-600 mt-0.5" />
+            <div>
+              <p className="font-medium text-amber-800">Importante</p>
+              <p className="text-sm text-amber-700 mt-1">
+                Todos os documentos serão analisados pela equipe de compliance antes da aprovação do cadastro.
+              </p>
+            </div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 py-8 px-4">
@@ -221,31 +1515,36 @@ export default function OnboardingPage() {
           className="text-center mb-8"
         >
           <h1 className="text-3xl font-bold text-slate-900">Cadastro de Investidor</h1>
-          <p className="text-slate-500 mt-2">Preencha seus dados para completar o onboarding</p>
+          <p className="text-slate-500 mt-2">
+            Complete seu cadastro para participar da emissão
+          </p>
         </motion.div>
 
-        {/* Progress Steps */}
+        {/* Steps */}
         <div className="mb-8">
-          <div className="flex items-center justify-between">
-            {steps.map((step, index) => {
+          <div className="flex items-center justify-between max-w-2xl mx-auto">
+            {STEPS.map((step, index) => {
               const Icon = step.icon;
               const isActive = index === currentStep;
               const isCompleted = index < currentStep;
+              const isDisabled = index > currentStep;
               
               return (
                 <div key={step.id} className="flex items-center">
-                  <div className={`flex flex-col items-center ${isActive ? 'text-blue-600' : isCompleted ? 'text-green-600' : 'text-slate-400'}`}>
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center border-2 ${
-                      isActive ? 'border-blue-600 bg-blue-50' : 
-                      isCompleted ? 'border-green-600 bg-green-50' : 
-                      'border-slate-300 bg-white'
+                  <div className={`flex flex-col items-center ${isDisabled ? 'opacity-40' : ''}`}>
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${
+                      isActive ? 'bg-blue-600 text-white' :
+                      isCompleted ? 'bg-green-500 text-white' :
+                      'bg-slate-200 text-slate-500'
                     }`}>
-                      <Icon className="h-5 w-5" />
+                      {isCompleted ? <CheckCircle className="h-5 w-5" /> : <Icon className="h-5 w-5" />}
                     </div>
-                    <span className="text-xs mt-1 font-medium">{step.label}</span>
+                    <span className={`text-xs mt-1 ${isActive ? 'text-blue-600 font-medium' : 'text-slate-500'}`}>
+                      {step.label}
+                    </span>
                   </div>
-                  {index < steps.length - 1 && (
-                    <div className={`w-full h-0.5 mx-2 ${isCompleted ? 'bg-green-500' : 'bg-slate-200'}`} style={{ width: '60px' }} />
+                  {index < STEPS.length - 1 && (
+                    <div className={`w-12 h-0.5 mx-2 ${isCompleted ? 'bg-green-500' : 'bg-slate-200'}`} />
                   )}
                 </div>
               );
@@ -253,515 +1552,63 @@ export default function OnboardingPage() {
           </div>
         </div>
 
-        {/* Form Content */}
-        <motion.div
-          key={currentStep}
-          initial={{ opacity: 0, x: 20 }}
-          animate={{ opacity: 1, x: 0 }}
-          exit={{ opacity: 0, x: -20 }}
-        >
-          <Card className="shadow-lg">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                {currentStep === 0 && <User className="h-5 w-5" />}
-                {currentStep === 1 && <FileText className="h-5 w-5" />}
-                {currentStep === 2 && <CheckCircle className="h-5 w-5" />}
-                {currentStep === 3 && <Upload className="h-5 w-5" />}
-                {steps[currentStep].label}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              
-              {/* Step 0: Dados Cadastrais */}
-              {currentStep === 0 && (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>Tipo de Investidor *</Label>
-                      <Select 
-                        value={dadosForm.tipo} 
-                        onValueChange={(v) => setDadosForm({ ...dadosForm, tipo: v as any })}
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="pessoa_fisica">Pessoa Física</SelectItem>
-                          <SelectItem value="pessoa_juridica">Pessoa Jurídica</SelectItem>
-                          <SelectItem value="institucional">Institucional</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Perfil *</Label>
-                      <Select 
-                        value={dadosForm.tipo_investidor} 
-                        onValueChange={(v) => setDadosForm({ ...dadosForm, tipo_investidor: v })}
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="varejo">Varejo</SelectItem>
-                          <SelectItem value="qualificado">Qualificado</SelectItem>
-                          <SelectItem value="profissional">Profissional</SelectItem>
-                          <SelectItem value="institucional">Institucional</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <Label>Nome Completo / Razão Social *</Label>
-                    <Input 
-                      value={dadosForm.nome} 
-                      onChange={(e) => setDadosForm({ ...dadosForm, nome: e.target.value })}
-                      placeholder="Digite o nome completo"
-                    />
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <Label>CPF/CNPJ *</Label>
-                    <Input 
-                      value={dadosForm.cpf_cnpj} 
-                      onChange={(e) => setDadosForm({ ...dadosForm, cpf_cnpj: e.target.value })}
-                      placeholder="000.000.000-00 ou 00.000.000/0000-00"
-                    />
-                  </div>
-                  
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>Email *</Label>
-                      <Input 
-                        type="email"
-                        value={dadosForm.email} 
-                        onChange={(e) => setDadosForm({ ...dadosForm, email: e.target.value })}
-                        placeholder="email@exemplo.com"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Telefone *</Label>
-                      <Input 
-                        value={dadosForm.telefone} 
-                        onChange={(e) => setDadosForm({ ...dadosForm, telefone: e.target.value })}
-                        placeholder="(00) 00000-0000"
-                      />
-                    </div>
-                  </div>
-                </div>
+        {/* Content */}
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={currentStep}
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -20 }}
+          >
+            {currentStep === 0 && renderIdentificacao()}
+            {currentStep === 1 && tipo === 'pf' && renderFichaPF()}
+            {currentStep === 1 && tipo === 'pj' && renderFichaPJ()}
+            {currentStep === 1 && tipo === 'institucional' && renderFichaInstitucional()}
+            {currentStep === 2 && renderSuitability()}
+            {currentStep === 3 && renderDocumentos()}
+          </motion.div>
+        </AnimatePresence>
+
+        {/* Navigation */}
+        <div className="flex justify-between mt-8">
+          <Button
+            variant="outline"
+            onClick={handleBack}
+            disabled={currentStep === 0}
+          >
+            <ChevronLeft className="h-4 w-4 mr-2" />
+            Voltar
+          </Button>
+
+          {currentStep < STEPS.length - 1 ? (
+            <Button
+              onClick={handleNext}
+              disabled={currentStep === 0 && (checkStatus === 'idle' || checkStatus === 'loading')}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              {checkStatus === 'ok' ? 'Confirmar' : 'Próximo'}
+              <ChevronRight className="h-4 w-4 ml-2" />
+            </Button>
+          ) : (
+            <Button
+              onClick={handleSubmit}
+              disabled={submitting}
+              className="bg-green-600 hover:bg-green-700"
+            >
+              {submitting ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Enviando...
+                </>
+              ) : (
+                <>
+                  <CheckCircle className="h-4 w-4 mr-2" />
+                  Enviar para Análise
+                </>
               )}
-
-              {/* Step 1: KYC */}
-              {currentStep === 1 && (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>Nacionalidade</Label>
-                      <Select 
-                        value={kycForm.nacionalidade} 
-                        onValueChange={(v) => setKycForm({ ...kycForm, nacionalidade: v })}
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="brasileira">Brasileira</SelectItem>
-                          <SelectItem value="estrangeira">Estrangeira</SelectItem>
-                          <SelectItem value="dual">Dupla Cidadania</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Estado Civil</Label>
-                      <Select 
-                        value={kycForm.estado_civil} 
-                        onValueChange={(v) => setKycForm({ ...kycForm, estado_civil: v })}
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="solteiro">Solteiro(a)</SelectItem>
-                          <SelectItem value="casado">Casado(a)</SelectItem>
-                          <SelectItem value="divorciado">Divorciado(a)</SelectItem>
-                          <SelectItem value="viuvo">Viúvo(a)</SelectItem>
-                          <SelectItem value="uniao_estavel">União Estável</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <Label>Profissão *</Label>
-                    <Input 
-                      value={kycForm.profissao} 
-                      onChange={(e) => setKycForm({ ...kycForm, profissao: e.target.value })}
-                      placeholder="Ex: Engenheiro, Advogado, Empresário..."
-                    />
-                  </div>
-                  
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>Renda Mensal Aproximada *</Label>
-                      <Select 
-                        value={kycForm.renda_mensal} 
-                        onValueChange={(v) => setKycForm({ ...kycForm, renda_mensal: v })}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Selecione..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="ate_5k">Até R$ 5.000</SelectItem>
-                          <SelectItem value="5k_10k">R$ 5.000 a R$ 10.000</SelectItem>
-                          <SelectItem value="10k_20k">R$ 10.000 a R$ 20.000</SelectItem>
-                          <SelectItem value="20k_50k">R$ 20.000 a R$ 50.000</SelectItem>
-                          <SelectItem value="acima_50k">Acima de R$ 50.000</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Patrimônio Aproximado</Label>
-                      <Select 
-                        value={kycForm.patrimonio} 
-                        onValueChange={(v) => setKycForm({ ...kycForm, patrimonio: v })}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Selecione..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="ate_100k">Até R$ 100.000</SelectItem>
-                          <SelectItem value="100k_500k">R$ 100.000 a R$ 500.000</SelectItem>
-                          <SelectItem value="500k_1m">R$ 500.000 a R$ 1.000.000</SelectItem>
-                          <SelectItem value="1m_5m">R$ 1.000.000 a R$ 5.000.000</SelectItem>
-                          <SelectItem value="acima_5m">Acima de R$ 5.000.000</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                  
-                  <div className="border-t pt-4 mt-4">
-                    <Label className="text-lg font-medium mb-3 block">Endereço</Label>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label>CEP *</Label>
-                        <Input 
-                          value={kycForm.endereco.cep} 
-                          onChange={(e) => setKycForm({ 
-                            ...kycForm, 
-                            endereco: { ...kycForm.endereco, cep: e.target.value }
-                          })}
-                          placeholder="00000-000"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Estado</Label>
-                        <Input 
-                          value={kycForm.endereco.estado} 
-                          onChange={(e) => setKycForm({ 
-                            ...kycForm, 
-                            endereco: { ...kycForm.endereco, estado: e.target.value }
-                          })}
-                          placeholder="SP"
-                        />
-                      </div>
-                    </div>
-                    <div className="space-y-2 mt-3">
-                      <Label>Logradouro</Label>
-                      <Input 
-                        value={kycForm.endereco.logradouro} 
-                        onChange={(e) => setKycForm({ 
-                          ...kycForm, 
-                          endereco: { ...kycForm.endereco, logradouro: e.target.value }
-                        })}
-                        placeholder="Rua, Avenida, etc."
-                      />
-                    </div>
-                    <div className="grid grid-cols-3 gap-4 mt-3">
-                      <div className="space-y-2">
-                        <Label>Número</Label>
-                        <Input 
-                          value={kycForm.endereco.numero} 
-                          onChange={(e) => setKycForm({ 
-                            ...kycForm, 
-                            endereco: { ...kycForm.endereco, numero: e.target.value }
-                          })}
-                        />
-                      </div>
-                      <div className="space-y-2 col-span-2">
-                        <Label>Complemento</Label>
-                        <Input 
-                          value={kycForm.endereco.complemento} 
-                          onChange={(e) => setKycForm({ 
-                            ...kycForm, 
-                            endereco: { ...kycForm.endereco, complemento: e.target.value }
-                          })}
-                          placeholder="Apto, Sala, etc."
-                        />
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4 mt-3">
-                      <div className="space-y-2">
-                        <Label>Bairro</Label>
-                        <Input 
-                          value={kycForm.endereco.bairro} 
-                          onChange={(e) => setKycForm({ 
-                            ...kycForm, 
-                            endereco: { ...kycForm.endereco, bairro: e.target.value }
-                          })}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Cidade</Label>
-                        <Input 
-                          value={kycForm.endereco.cidade} 
-                          onChange={(e) => setKycForm({ 
-                            ...kycForm, 
-                            endereco: { ...kycForm.endereco, cidade: e.target.value }
-                          })}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Step 2: Suitability */}
-              {currentStep === 2 && (
-                <div className="space-y-6">
-                  <div className="space-y-3">
-                    <Label>Qual sua experiência com investimentos? *</Label>
-                    <RadioGroup 
-                      value={suitabilityForm.experiencia_investimentos}
-                      onValueChange={(v) => setSuitabilityForm({ ...suitabilityForm, experiencia_investimentos: v })}
-                    >
-                      <div className="space-y-2">
-                        {[
-                          { value: 'nenhuma', label: 'Nenhuma - Nunca investi' },
-                          { value: 'basica', label: 'Básica - Poupança e CDB' },
-                          { value: 'intermediaria', label: 'Intermediária - Fundos, Ações' },
-                          { value: 'avancada', label: 'Avançada - Derivativos, Cambio' },
-                        ].map((opt) => (
-                          <div key={opt.value} className="flex items-center space-x-2">
-                            <RadioGroupItem value={opt.value} id={opt.value} />
-                            <Label htmlFor={opt.value} className="cursor-pointer">{opt.label}</Label>
-                          </div>
-                        ))}
-                      </div>
-                    </RadioGroup>
-                  </div>
-                  
-                  <div className="space-y-3">
-                    <Label>Por quanto tempo pretende manter seus investimentos? *</Label>
-                    <RadioGroup 
-                      value={suitabilityForm.tempo_investimento}
-                      onValueChange={(v) => setSuitabilityForm({ ...suitabilityForm, tempo_investimento: v })}
-                    >
-                      <div className="space-y-2">
-                        {[
-                          { value: 'menos_1_ano', label: 'Menos de 1 ano' },
-                          { value: '1_3_anos', label: '1 a 3 anos' },
-                          { value: '3_5_anos', label: '3 a 5 anos' },
-                          { value: 'mais_5_anos', label: 'Mais de 5 anos' },
-                        ].map((opt) => (
-                          <div key={opt.value} className="flex items-center space-x-2">
-                            <RadioGroupItem value={opt.value} id={opt.value} />
-                            <Label htmlFor={opt.value} className="cursor-pointer">{opt.label}</Label>
-                          </div>
-                        ))}
-                      </div>
-                    </RadioGroup>
-                  </div>
-                  
-                  <div className="space-y-3">
-                    <Label>Qual percentual da sua renda mensal você destina a investimentos? *</Label>
-                    <RadioGroup 
-                      value={suitabilityForm.percentual_renda}
-                      onValueChange={(v) => setSuitabilityForm({ ...suitabilityForm, percentual_renda: v })}
-                    >
-                      <div className="space-y-2">
-                        {[
-                          { value: 'ate_10', label: 'Até 10%' },
-                          { value: '10_25', label: '10% a 25%' },
-                          { value: '25_50', label: '25% a 50%' },
-                          { value: 'acima_50', label: 'Acima de 50%' },
-                        ].map((opt) => (
-                          <div key={opt.value} className="flex items-center space-x-2">
-                            <RadioGroupItem value={opt.value} id={opt.value} />
-                            <Label htmlFor={opt.value} className="cursor-pointer">{opt.label}</Label>
-                          </div>
-                        ))}
-                      </div>
-                    </RadioGroup>
-                  </div>
-                  
-                  <div className="space-y-3">
-                    <Label>Qual sua tolerância ao risco? *</Label>
-                    <RadioGroup 
-                      value={suitabilityForm.tolerancia_risco}
-                      onValueChange={(v) => setSuitabilityForm({ ...suitabilityForm, tolerancia_risco: v })}
-                    >
-                      <div className="space-y-2">
-                        {[
-                          { value: 'conservador', label: 'Conservador - Preservar capital, aceito retornos menores' },
-                          { value: 'moderado', label: 'Moderado - Equilíbrio entre risco e retorno' },
-                          { value: 'arrojado', label: 'Arrojado - Busco maiores retornos, aceito volatilidade' },
-                        ].map((opt) => (
-                          <div key={opt.value} className="flex items-center space-x-2">
-                            <RadioGroupItem value={opt.value} id={opt.value} />
-                            <Label htmlFor={opt.value} className="cursor-pointer">{opt.label}</Label>
-                          </div>
-                        ))}
-                      </div>
-                    </RadioGroup>
-                  </div>
-                  
-                  <div className="space-y-3">
-                    <Label>Qual seu objetivo principal com os investimentos? *</Label>
-                    <RadioGroup 
-                      value={suitabilityForm.objetivo_investimento}
-                      onValueChange={(v) => setSuitabilityForm({ ...suitabilityForm, objetivo_investimento: v })}
-                    >
-                      <div className="space-y-2">
-                        {[
-                          { value: 'preservacao', label: 'Preservação do capital' },
-                          { value: 'renda', label: 'Geração de renda' },
-                          { value: 'crescimento', label: 'Crescimento do patrimônio' },
-                          { value: 'especulacao', label: 'Especulação' },
-                        ].map((opt) => (
-                          <div key={opt.value} className="flex items-center space-x-2">
-                            <RadioGroupItem value={opt.value} id={opt.value} />
-                            <Label htmlFor={opt.value} className="cursor-pointer">{opt.label}</Label>
-                          </div>
-                        ))}
-                      </div>
-                    </RadioGroup>
-                  </div>
-                  
-                  <div className="border-t pt-4">
-                    <Label className="mb-3 block">Conhecimento em:</Label>
-                    <div className="space-y-2">
-                      {[
-                        { key: 'conhecimento_renda_fixa', label: 'Renda Fixa' },
-                        { key: 'conhecimento_renda_variavel', label: 'Renda Variável (Ações)' },
-                        { key: 'conhecimento_derivativos', label: 'Derivativos (Opções, Futuros)' },
-                        { key: 'conhecimento_cambio', label: 'Mercado de Câmbio' },
-                      ].map((item) => (
-                        <div key={item.key} className="flex items-center space-x-2">
-                          <Checkbox 
-                            id={item.key}
-                            checked={suitabilityForm[item.key as keyof typeof suitabilityForm] as boolean}
-                            onCheckedChange={(checked) => 
-                              setSuitabilityForm({ ...suitabilityForm, [item.key]: checked })
-                            }
-                          />
-                          <Label htmlFor={item.key} className="cursor-pointer">{item.label}</Label>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Step 3: Documentos */}
-              {currentStep === 3 && (
-                <div className="space-y-6">
-                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
-                    <div className="flex items-start gap-3">
-                      <AlertCircle className="h-5 w-5 text-amber-600 mt-0.5" />
-                      <div>
-                        <p className="font-medium text-amber-800">Documentos obrigatórios</p>
-                        <p className="text-sm text-amber-700">
-                          Envie os documentos abaixo para completar seu cadastro. 
-                          Arquivos aceitos: PDF, JPG, PNG (máx. 10MB cada).
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {[
-                    { key: 'rg_cpf', label: 'RG e CPF (frente e verso)', required: true },
-                    { key: 'comprovante_residencia', label: 'Comprovante de Residência (últimos 3 meses)', required: true },
-                    { key: 'kyc_assinado', label: 'Formulário KYC Assinado', required: false },
-                    { key: 'suitability_assinado', label: 'Formulário Suitability Assinado', required: false },
-                    { key: 'ficha_cadastral', label: 'Ficha Cadastral Assinada', required: false },
-                  ].map((doc) => (
-                    <div key={doc.key} className="border rounded-lg p-4">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <Label className="font-medium">
-                            {doc.label}
-                            {doc.required && <span className="text-red-500 ml-1">*</span>}
-                          </Label>
-                          <p className="text-sm text-slate-500">
-                            {documentos[doc.key as keyof typeof documentos]?.name || 'Nenhum arquivo selecionado'}
-                          </p>
-                        </div>
-                        <div>
-                          <Input
-                            type="file"
-                            accept=".pdf,.jpg,.jpeg,.png"
-                            className="hidden"
-                            id={`file-${doc.key}`}
-                            onChange={(e) => handleFileChange(doc.key, e.target.files?.[0] || null)}
-                          />
-                          <Label htmlFor={`file-${doc.key}`}>
-                            <Button type="button" variant="outline" className="cursor-pointer" asChild>
-                              <span>
-                                <Upload className="h-4 w-4 mr-2" />
-                                {documentos[doc.key as keyof typeof documentos] ? 'Trocar' : 'Selecionar'}
-                              </span>
-                            </Button>
-                          </Label>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Navigation Buttons */}
-              <div className="flex justify-between pt-6 border-t">
-                <Button
-                  variant="outline"
-                  onClick={() => setCurrentStep(Math.max(0, currentStep - 1))}
-                  disabled={currentStep === 0}
-                >
-                  <ChevronLeft className="h-4 w-4 mr-2" />
-                  Anterior
-                </Button>
-                
-                {currentStep < steps.length - 1 ? (
-                  <Button
-                    onClick={() => setCurrentStep(currentStep + 1)}
-                    disabled={!canProceed()}
-                    className="bg-blue-600 hover:bg-blue-700"
-                  >
-                    Próximo
-                    <ChevronRight className="h-4 w-4 ml-2" />
-                  </Button>
-                ) : (
-                  <Button
-                    onClick={handleSubmit}
-                    disabled={!canProceed() || submitting}
-                    className="bg-green-600 hover:bg-green-700"
-                  >
-                    {submitting ? (
-                      <>
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        Enviando...
-                      </>
-                    ) : (
-                      <>
-                        <CheckCircle className="h-4 w-4 mr-2" />
-                        Finalizar Cadastro
-                      </>
-                    )}
-                  </Button>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        </motion.div>
+            </Button>
+          )}
+        </div>
       </div>
     </div>
   );

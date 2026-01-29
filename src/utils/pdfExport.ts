@@ -1,9 +1,15 @@
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
 import { Emissao, STATUS_LABELS } from '@/types';
 import { formatCurrency, formatDate } from './formatters';
 
-export function exportEmissaoToPDF(emissao: Emissao): void {
+// Dynamic imports do jspdf - carregados apenas quando necessário
+async function getJsPDF() {
+  const { default: jsPDF } = await import('jspdf');
+  const { default: autoTable } = await import('jspdf-autotable');
+  return { jsPDF, autoTable };
+}
+
+export async function exportEmissaoToPDF(emissao: Emissao): Promise<void> {
+  const { jsPDF, autoTable } = await getJsPDF();
   const doc = new jsPDF();
   
   // Header
@@ -96,7 +102,8 @@ export function exportEmissaoToPDF(emissao: Emissao): void {
   doc.save(`${emissao.codigo}_relatorio.pdf`);
 }
 
-export function exportEmissoesListToPDF(emissoes: Emissao[], titulo = 'Lista de Emissões'): void {
+export async function exportEmissoesListToPDF(emissoes: Emissao[], titulo = 'Lista de Emissões'): Promise<void> {
+  const { jsPDF, autoTable } = await getJsPDF();
   const doc = new jsPDF('landscape');
   
   // Header
