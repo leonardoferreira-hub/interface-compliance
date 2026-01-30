@@ -39,7 +39,7 @@ interface InvestidorForm {
   token_onboarding?: string;
 }
 
-const ONBOARDING_BASE_URL = 'http://100.91.53.76:8084/onboarding';
+const ONBOARDING_BASE_URL = `${import.meta.env.VITE_APP_URL || 'https://interfacecompliance.lovable.app'}/onboarding`;
 
 export default function CadastroInvestidoresEmissaoPage() {
   const { emissaoId } = useParams<{ emissaoId: string }>();
