@@ -1,13 +1,12 @@
 export type InvestorType = 'PF' | 'PJ' | 'INSTITUCIONAL';
 
-// Aliases para compatibilidade
-export type TipoInvestidor = InvestorType;
-export type PerfilSuitability = PerfilInvestidor;
-export type RespostasSuitability = RespostaSuitability[];
-
 export type CivilStatus = 'SOLTEIRO' | 'CASADO' | 'DIVORCIADO' | 'VIUVO' | 'SEPARADO' | 'UNIAO_ESTAVEL';
 
 export type PerfilInvestidor = 'CONSERVADOR' | 'MODERADO' | 'AGRESSIVO';
+
+// Aliases para compatibilidade (definidos DEPOIS dos tipos originais)
+export type TipoInvestidor = InvestorType;
+export type PerfilSuitability = PerfilInvestidor;
 
 export interface Endereco {
   cep: string;
@@ -165,3 +164,6 @@ export interface OnboardingData {
   declaracaoProfissional?: DeclaracaoProfissional;
   termosAceitos: boolean;
 }
+
+// Alias adicional para compatibilidade
+export type RespostasSuitability = RespostaSuitability[];
