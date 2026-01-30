@@ -247,25 +247,45 @@ export default function OnboardingPage() {
   };
 
   // Registrar vínculo com a emissão
-  const registrarVinculoEmissao = async (status: string) => {
+  const registrarVinculoEmissao = async (status: string, investidorId?: string) => {
     try {
-      // Buscar emissão pelo token
-      const { data: tokenData } = await supabase
-        .from('tokens_onboarding')
-        .select('emissao_id')
-        .eq('token', token)
-        .maybeSingle();
+      // Pegar emissaoId do query param (com fallback para window.location)
+      let emissaoId = searchParams.get('emissao');
       
-      if (tokenData?.emissao_id) {
+      // Fallback: tentar pegar direto da URL
+      if (!emissaoId) {
+        const urlParams = new URLSearchParams(window.location.search);
+        emissaoId = urlParams.get('emissao');
+      }
+      
+      console.log('🔍 emissaoId capturado:', emissaoId, 'URL:', window.location.href);
+      
+      if (!emissaoId) {
+        console.warn('⚠️ emissaoId não encontrado no query param');
+        return;
+      }
+      
+      console.log('🔗 Registrando vínculo:', { emissaoId, cpfCnpj, status, investidorId });
+      
+      // Usar RPC para criar vínculo
+      const { data, error } = await supabase.rpc('vincular_investidor_pos_cadastro', {
+        p_emissao_id: emissaoId,
+        p_investidor_id: investidorId || investidorExistente?.id || null,
+        p_cpf_cnpj: cpfCnpj.replace(/\D/g, ''),
+      });
+      
+      if (error) {
+        console.error('Erro no RPC vincular_investidor_pos_cadastro:', error);
+      } else {
+        console.log('✅ Vínculo criado:', data);
+      }
+      
+      // Atualizar status se necessário
+      if (data?.id) {
         await supabase
           .from('investidor_emissao')
-          .upsert({
-            emissao_id: tokenData.emissao_id,
-            cnpj_cpf: cpfCnpj.replace(/\D/g, ''),
-            tipo: tipo,
-            status: status,
-            investidor_id: investidorExistente?.id,
-          });
+          .update({ status: status })
+          .eq('id', data.id);
       }
       
       if (status === 'compliance_ok') {
@@ -301,19 +321,32 @@ export default function OnboardingPage() {
         nome: tipo === 'pf' ? dadosPF.nome_completo : tipo === 'pj' ? dadosPJ.razao_social : dadosInstitucional.razao_social,
         email: tipo === 'pf' ? dadosPF.email : tipo === 'pj' ? dadosPJ.email : dadosInstitucional.email,
         telefone: tipo === 'pf' ? dadosPF.telefone : tipo === 'pj' ? dadosPJ.telefone : dadosInstitucional.telefone,
-        dados_cadastrais: dadosCadastrais,
-        suitability: suitability,
+        kyc_json: dadosCadastrais,
+        suitability_json: suitability,
         status_onboarding: 'em_analise',
-        token_origem: token,
+        token_acesso: token,
       };
       
+      // Usar RPC para contornar limitação de view
       const { data: investidor, error } = await supabase
-        .from('investidores')
-        .upsert(investidorData, { onConflict: 'cpf_cnpj' })
-        .select()
-        .single();
+        .rpc('upsert_investidor', {
+          p_cpf_cnpj: investidorData.cpf_cnpj,
+          p_nome: investidorData.nome,
+          p_email: investidorData.email || null,
+          p_telefone: investidorData.telefone || null,
+          p_tipo: investidorData.tipo,
+          p_tipo_investidor: 'varejo',
+          p_status_onboarding: investidorData.status_onboarding,
+          p_kyc_json: investidorData.kyc_json,
+          p_suitability_json: investidorData.suitability_json,
+          p_perfil_risco: null,
+          p_token_acesso: investidorData.token_acesso,
+        });
       
       if (error) throw error;
+      
+      console.log('✅ Investidor criado:', investidor);
+      console.log('📋 Query params - emissao:', searchParams.get('emissao'));
       
       // Upload de documentos
       if (Object.keys(documentos).length > 0) {
@@ -333,8 +366,8 @@ export default function OnboardingPage() {
         }
       }
       
-      // Registrar vínculo com emissão
-      await registrarVinculoEmissao('em_analise');
+      // Registrar vínculo com emissão (passando o ID do investidor criado)
+      await registrarVinculoEmissao('em_analise', investidor.id);
       
       toast.success('Cadastro enviado para análise!');
       navigate('/obrigado?status=analise');

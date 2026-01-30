@@ -193,7 +193,12 @@ interface UseOnboardingReturn {
 export function useOnboarding(): UseOnboardingReturn {
   const { token: urlToken } = useParams<{ token: string }>();
   
+  // Pegar emissaoId do query param (vem como ?emissao=uuid)
+  const searchParams = new URLSearchParams(window.location.search);
+  const emissaoIdFromQuery = searchParams.get('emissao');
+  
   const [token, setToken] = useState<string | null>(urlToken || null);
+  const [emissaoId, setEmissaoId] = useState<string | null>(emissaoIdFromQuery);
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -379,30 +384,42 @@ export function useOnboarding(): UseOnboardingReturn {
         perfil_risco: data.suitability.perfil,
       };
 
-      // Inserir investidor
+      // Inserir investidor via RPC (contorna limitação de view)
       const { data: investidor, error: investidorError } = await supabase
-        .from('investidores')
-        .insert(investidorData)
-        .select()
-        .single();
+        .rpc('criar_investidor', {
+          p_cpf_cnpj: cpf_cnpj,
+          p_nome: nome,
+          p_email: email || null,
+          p_telefone: telefone || null,
+          p_tipo: tipo,
+          p_tipo_investidor: investidorData.tipo_investidor,
+          p_status_onboarding: investidorData.status_onboarding,
+          p_kyc_json: kyc_json,
+          p_suitability_json: investidorData.suitability_json,
+          p_perfil_risco: investidorData.perfil_risco || null,
+          p_token_acesso: token || null,
+        });
 
       if (investidorError) {
         console.error('Erro ao criar investidor:', investidorError);
         throw new Error('Erro ao salvar dados do investidor');
       }
 
-      // Atualizar registro de emissao_investidores
-      const { error: updateError } = await supabase
-        .from('emissao_investidores')
-        .update({
-          investidor_id: investidor.id,
-          status_cadastro: 'preenchido',
-          updated_at: new Date().toISOString(),
-        })
-        .eq('token_cadastro', token);
+      // Vincular investidor à emissão (emissaoId vem do query param ?emissao=)
+      if (emissaoId) {
+        console.log('🔗 Vinculando investidor:', { emissaoId, investidor, cpf_cnpj });
+        const { data: vinculoResult, error: vinculoError } = await supabase.rpc('vincular_investidor_pos_cadastro', {
+          p_emissao_id: emissaoId,
+          p_investidor_id: investidor.id,
+          p_cpf_cnpj: cpf_cnpj,
+        });
 
-      if (updateError) {
-        console.error('Erro ao atualizar emissao_investidores:', updateError);
+        console.log('🔗 Resultado vínculo:', { vinculoResult, vinculoError });
+        if (vinculoError) {
+          console.error('Erro ao vincular investidor à emissão:', vinculoError);
+        }
+      } else {
+        console.warn('⚠️ emissaoId não encontrado no query param, vínculo não criado');
       }
 
       // Limpar progresso salvo
