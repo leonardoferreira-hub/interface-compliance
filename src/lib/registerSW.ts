@@ -37,8 +37,10 @@ export async function registerBackgroundSync() {
   if ('serviceWorker' in navigator && 'SyncManager' in window) {
     const registration = await navigator.serviceWorker.ready;
     try {
-      await registration.sync.register('sync-data');
-      console.log('Background sync registrado');
+      if ('sync' in registration) {
+        await (registration as any).sync.register('sync-data');
+        console.log('Background sync registrado');
+      }
     } catch (error) {
       console.error('Background sync falhou:', error);
     }

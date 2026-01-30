@@ -64,12 +64,13 @@ export default defineConfig(({ mode }) => ({
         entryFileNames: 'assets/[name]-[hash].js',
         chunkFileNames: 'assets/[name]-[hash].js',
         assetFileNames: (assetInfo) => {
-          const info = assetInfo.name.split('.');
+          const name = assetInfo.name ?? '';
+          const info = name.split('.');
           const ext = info[info.length - 1];
-          if (/\.(png|jpe?g|gif|svg|webp|ico)$/.test(assetInfo.name)) {
+          if (/\.(png|jpe?g|gif|svg|webp|ico)$/.test(name)) {
             return 'assets/images/[name]-[hash][extname]';
           }
-          if (/\.(woff2?|ttf|otf|eot)$/.test(assetInfo.name)) {
+          if (/\.(woff2?|ttf|otf|eot)$/.test(name)) {
             return 'assets/fonts/[name]-[hash][extname]';
           }
           return 'assets/[name]-[hash][extname]';

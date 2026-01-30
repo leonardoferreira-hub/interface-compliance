@@ -52,7 +52,7 @@ export async function exportEmissaoToPDF(emissao: Emissao): Promise<void> {
   });
   
   // Séries
-  const finalY = (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 15;
+  const finalY = (doc as any).lastAutoTable.finalY + 15;
   
   doc.setFontSize(14);
   doc.text('Séries', 14, finalY);
@@ -72,7 +72,7 @@ export async function exportEmissaoToPDF(emissao: Emissao): Promise<void> {
   });
   
   // Partes envolvidas
-  const finalY2 = (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 15;
+  const finalY2 = (doc as any).lastAutoTable.finalY + 15;
   
   if (finalY2 < 250) {
     doc.setFontSize(14);

@@ -29,7 +29,7 @@ export function useInvestidoresEmissao(emissaoId: string | undefined) {
     queryFn: async () => {
       if (!emissaoId) return [];
       
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from('v_investidores_emissao')
         .select('*')
         .eq('emissao_id', emissaoId)

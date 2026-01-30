@@ -345,11 +345,14 @@ export default function OnboardingPage() {
       
       if (error) throw error;
       
-      console.log('✅ Investidor criado:', investidor);
+      // Cast para garantir tipagem
+      const investidorResult = investidor as unknown as { id: string } | null;
+      
+      console.log('✅ Investidor criado:', investidorResult);
       console.log('📋 Query params - emissao:', searchParams.get('emissao'));
       
       // Upload de documentos
-      if (Object.keys(documentos).length > 0) {
+      if (Object.keys(documentos).length > 0 && investidorResult?.id) {
         for (const [tipo, arquivo] of Object.entries(documentos)) {
           if (arquivo && arquivo instanceof File) {
             const path = `investidores/${numeros}/${tipo}_${Date.now()}`;
@@ -357,7 +360,7 @@ export default function OnboardingPage() {
             
             // Registrar documento
             await supabase.from('investidor_documentos').insert({
-              investidor_id: investidor.id,
+              investidor_id: investidorResult!.id,
               tipo_documento: tipo,
               arquivo_path: path,
               status: 'pendente',
@@ -367,7 +370,7 @@ export default function OnboardingPage() {
       }
       
       // Registrar vínculo com emissão (passando o ID do investidor criado)
-      await registrarVinculoEmissao('em_analise', investidor.id);
+      await registrarVinculoEmissao('em_analise', investidorResult?.id);
       
       toast.success('Cadastro enviado para análise!');
       navigate('/obrigado?status=analise');

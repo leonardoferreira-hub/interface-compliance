@@ -98,13 +98,13 @@ function buildResumoRow(bundle: Awaited<ReturnType<typeof fetchEmissaoBundle>>):
 
   return {
     numero_emissao: emissao?.numero_emissao ?? null,
-    nome_operacao: emissao?.nome_operacao ?? emissao?.nome ?? null,
+    nome_operacao: emissao?.nome_operacao ?? (emissao as any)?.nome ?? null,
     empresa: emissao?.empresa_razao_social ?? null,
     status: emissao?.status ?? null,
     pmo: (emissao as any)?.pmo_nome ?? null,
     categoria: (emissao as any)?.categoria_nome ?? null,
     veiculo: (emissao as any)?.veiculo_nome ?? null,
-    volume: emissao?.volume ?? emissao?.volume_total ?? null,
+    volume: emissao?.volume ?? (emissao as any)?.volume_total ?? null,
     data_entrada_pipe: (emissao as any)?.data_entrada_pipe ?? null,
     data_previsao_liquidacao: (emissao as any)?.data_previsao_liquidacao ?? null,
     data_liquidacao: (emissao as any)?.data_liquidacao ?? null,

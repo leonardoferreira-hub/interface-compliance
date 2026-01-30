@@ -8,7 +8,7 @@ export function useUpdateOperacao() {
 
   return useMutation({
     mutationFn: async ({ id, dados }: { id: string; dados: UpdateOperacaoData }) => {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .schema('estruturacao')
         .from('operacoes')
         .update(dados)

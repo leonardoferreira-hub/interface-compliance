@@ -38,7 +38,7 @@ export function useOperacoesEstruturacao() {
   return useQuery({
     queryKey: ['operacoes-estruturacao'],
     queryFn: async () => {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .schema('estruturacao')
         .from('v_operacoes_ui')
         .select('*')
@@ -55,7 +55,7 @@ export function useOperacoesLiquidadas() {
   return useQuery({
     queryKey: ['operacoes-liquidadas'],
     queryFn: async () => {
-      const { data: operacoes, error: operacoesError } = await supabase
+      const { data: operacoes, error: operacoesError } = await (supabase as any)
         .schema('estruturacao')
         .from('operacoes')
         .select('*')
@@ -70,7 +70,7 @@ export function useOperacoesLiquidadas() {
       const { data: veiculos, error: veiculosError } = await supabase.rpc('get_base_custos_veiculos' as any);
       if (veiculosError) throw veiculosError;
 
-      const { data: analistas, error: analistasError } = await supabase
+      const { data: analistas, error: analistasError } = await (supabase as any)
         .schema('estruturacao')
         .from('analistas_gestao')
         .select('id, nome');
@@ -100,7 +100,14 @@ export function useOperacoesLiquidadas() {
       const analistasMap = new Map((analistas || []).map((a: any) => [a.id, a.nome]));
       const usuariosMap = new Map((usuarios || []).map((u: any) => [u.id, u.nome_completo || u.nome || u.email || '—']));
 
-      return mapOperacoes(operacoes as any, categoriasMap, veiculosMap, analistasMap, usuariosMap, pmoByEmissaoId);
+      // Mapear operações com nomes resolvidos
+      return (operacoes || []).map((op: any) => ({
+        ...op,
+        categoria_nome: categoriasMap.get(op.categoria_id) || null,
+        veiculo_nome: veiculosMap.get(op.veiculo_id) || null,
+        analista_gestao_nome: analistasMap.get(op.analista_gestao_id) || null,
+        pmo_nome: usuariosMap.get(pmoByEmissaoId.get(op.id_emissao_comercial) || '') || null,
+      })) as OperacaoEstruturacao[];
     },
   });
 }
@@ -111,7 +118,7 @@ export function useOperacao(id: string | undefined) {
     queryFn: async () => {
       if (!id) return null;
 
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .schema('estruturacao')
         .from('operacoes')
         .select('*')

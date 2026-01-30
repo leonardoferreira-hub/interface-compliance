@@ -123,7 +123,7 @@ export function useDocumentosInvestidor(investidorId: string | undefined) {
       if (dbError) throw dbError;
 
       toast.success(`${config.label} enviado com sucesso`);
-      return data as DocumentoUpload;
+      return data as unknown as DocumentoUpload;
     } catch (error: any) {
       toast.error(error?.message || 'Erro ao fazer upload');
       return null;

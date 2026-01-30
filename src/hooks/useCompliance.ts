@@ -254,7 +254,7 @@ export function useInvestidorDetalhes(id: string | undefined) {
         });
       
       if (error) throw error;
-      return data as {
+      return data as unknown as {
         investidor: Investidor;
         documentos: any[];
       };
