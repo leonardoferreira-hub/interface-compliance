@@ -7,6 +7,9 @@ import type {
   AlocacaoInvestidorInsert 
 } from '@/types/estruturacao';
 
+// Re-export types para uso externo
+export type { AlocacaoInvestidorInsert };
+
 // ============= Investidores Queries =============
 
 export function useInvestidores() {

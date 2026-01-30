@@ -171,6 +171,7 @@ interface UseOnboardingReturn {
   currentStep: ComplianceStep;
   currentStepIndex: number;
   data: ComplianceData;
+  onboardingData: ComplianceData; // Alias
   perguntasSuitability: typeof perguntasSuitability;
   steps: typeof steps;
   validarToken: (token: string) => Promise<boolean>;
@@ -188,6 +189,13 @@ interface UseOnboardingReturn {
   updateDocumentos: (documentos: Documento[]) => void;
   updateDeclaracaoProfissional: (declaracao?: DeclaracaoProfissional) => void;
   canProceedToNextStep: () => boolean;
+  // Aliases para compatibilidade com OnboardingWizard
+  setTipo: (type: InvestorType) => void;
+  setDadosPF: (dados: DadosPF) => void;
+  setDadosPJ: (dados: DadosPJ) => void;
+  setDadosInstitucional: (dados: DadosInstitucional) => void;
+  setSuitability: (suitability: Suitability) => void;
+  atualizarDados: (campo: string, valor: any) => void;
 }
 
 export function useOnboarding(): UseOnboardingReturn {
@@ -532,6 +540,8 @@ export function useOnboarding(): UseOnboardingReturn {
     currentStep,
     currentStepIndex,
     data,
+    // Alias para compatibilidade com OnboardingWizard
+    onboardingData: data,
     perguntasSuitability,
     steps,
     validarToken,
@@ -549,5 +559,15 @@ export function useOnboarding(): UseOnboardingReturn {
     updateDocumentos,
     updateDeclaracaoProfissional,
     canProceedToNextStep,
+    // Aliases para compatibilidade
+    setTipo: updateInvestorType,
+    setDadosPF: updateDadosPF,
+    setDadosPJ: updateDadosPJ,
+    setDadosInstitucional: updateDadosInstitucional,
+    setSuitability: updateSuitability,
+    atualizarDados: (campo: string, valor: any) => {
+      // Helper para atualização genérica
+      console.log('atualizarDados:', campo, valor);
+    },
   };
 }

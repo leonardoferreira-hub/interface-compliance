@@ -13,6 +13,7 @@ import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
 import { exportDespesasLayoutToExcel } from '@/lib/excel-despesas';
 import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
 
 interface DespesasTabProps {
   idEmissao: string;

@@ -1,5 +1,10 @@
 export type InvestorType = 'PF' | 'PJ' | 'INSTITUCIONAL';
 
+// Aliases para compatibilidade
+export type TipoInvestidor = InvestorType;
+export type PerfilSuitability = PerfilInvestidor;
+export type RespostasSuitability = RespostaSuitability[];
+
 export type CivilStatus = 'SOLTEIRO' | 'CASADO' | 'DIVORCIADO' | 'VIUVO' | 'SEPARADO' | 'UNIAO_ESTAVEL';
 
 export type PerfilInvestidor = 'CONSERVADOR' | 'MODERADO' | 'AGRESSIVO';

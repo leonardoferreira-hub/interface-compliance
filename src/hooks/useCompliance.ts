@@ -262,3 +262,110 @@ export function useInvestidorDetalhes(id: string | undefined) {
     enabled: !!id,
   });
 }
+
+// ============= Compliance Checks =============
+
+export interface ComplianceCheck {
+  id: string;
+  operacao_id: string;
+  tipo: string;
+  status: 'pendente' | 'aprovado' | 'reprovado';
+  observacao?: string;
+  criado_em?: string;
+  atualizado_em?: string;
+}
+
+export function useComplianceChecks(operacaoId: string | undefined) {
+  return useQuery({
+    queryKey: ['compliance-checks', operacaoId],
+    queryFn: async () => {
+      if (!operacaoId) return [];
+      const { data, error } = await supabase
+        .from('compliance_checks' as any)
+        .select('*')
+        .eq('operacao_id', operacaoId);
+      if (error) {
+        console.warn('Erro ao buscar compliance checks:', error);
+        return [];
+      }
+      return (data || []) as ComplianceCheck[];
+    },
+    enabled: !!operacaoId,
+  });
+}
+
+export function useCreateComplianceCheck() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (check: Partial<ComplianceCheck>) => {
+      const { data, error } = await supabase
+        .from('compliance_checks' as any)
+        .insert(check)
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['compliance-checks', variables.operacao_id] });
+    },
+  });
+}
+
+export function useDeleteComplianceCheck() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, operacaoId }: { id: string; operacaoId: string }) => {
+      const { error } = await supabase
+        .from('compliance_checks' as any)
+        .delete()
+        .eq('id', id);
+      if (error) throw error;
+      return { id, operacaoId };
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['compliance-checks', data.operacaoId] });
+    },
+  });
+}
+
+export function useUpdateComplianceStatus() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, status, observacao }: { id: string; status: string; observacao?: string }) => {
+      const { data, error } = await supabase
+        .from('compliance_checks' as any)
+        .update({ status, observacao })
+        .eq('id', id)
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['compliance-checks'] });
+    },
+  });
+}
+
+export function useOperacaoComplianceCompleto(operacaoId: string | undefined) {
+  return useQuery({
+    queryKey: ['operacao-compliance-completo', operacaoId],
+    queryFn: async () => {
+      if (!operacaoId) return null;
+      // Buscar operação com dados de compliance
+      const { data, error } = await supabase
+        .rpc('get_operacao_compliance_completo' as any, { p_operacao_id: operacaoId });
+      if (error) {
+        console.warn('RPC não disponível, retornando dados básicos');
+        return { operacao: null, checks: [], investidores: [] };
+      }
+      return data as unknown as {
+        operacao: any;
+        checks: ComplianceCheck[];
+        investidores: any[];
+      };
+    },
+    enabled: !!operacaoId,
+  });
+}

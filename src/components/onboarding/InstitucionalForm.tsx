@@ -10,18 +10,19 @@ interface InstitucionalFormProps {
 }
 
 export function InstitucionalForm({ value, onChange }: InstitucionalFormProps) {
-  const [localData, setLocalData] = useState<Partial<DadosInstitucional>>(value);
+  // Usar any para flexibilidade com campos extras do formulário
+  const [localData, setLocalData] = useState<any>(value || {});
 
-  const handleChange = (field: keyof DadosInstitucional, valor: string) => {
+  const handleChange = (field: string, valor: string) => {
     const updated = { ...localData, [field]: valor };
     setLocalData(updated);
   };
 
-  const handleNestedChange = (parent: 'administrador' | 'gestor', field: string, valor: string) => {
+  const handleNestedChange = (parent: string, field: string, valor: string) => {
     const updated = {
       ...localData,
       [parent]: {
-        ...localData[parent],
+        ...(localData[parent] || {}),
         [field]: valor,
       },
     };
@@ -29,8 +30,27 @@ export function InstitucionalForm({ value, onChange }: InstitucionalFormProps) {
   };
 
   const handleBlur = () => {
-    if (localData.nome_instituicao && localData.cnpj) {
-      onChange(localData as DadosInstitucional);
+    // Mapear para o formato esperado pelo tipo
+    const mapped: DadosInstitucional = {
+      nomeInstituicao: localData.nome_instituicao || localData.nomeInstituicao || '',
+      cnpj: localData.cnpj || '',
+      tipoInstituicao: localData.tipo_instituicao || localData.tipoInstituicao || '',
+      endereco: {
+        cep: localData.cep || '',
+        logradouro: localData.endereco || '',
+        numero: localData.numero || '',
+        bairro: localData.bairro || '',
+        cidade: localData.cidade || '',
+        estado: localData.estado || '',
+      },
+      telefone: localData.telefone || '',
+      email: localData.email || '',
+      responsavelNome: localData.administrador?.nome || '',
+      responsavelCargo: 'Administrador',
+      responsavelEmail: localData.email || '',
+    };
+    if (mapped.nomeInstituicao && mapped.cnpj) {
+      onChange(mapped);
     }
   };
 

@@ -78,7 +78,7 @@ const FIELD_LABELS: Record<string, string> = {
 };
 
 function fieldLabel(key: string) {
-  return FIELD_LABELS[key] ?? key.replaceAll('_', ' ');
+  return FIELD_LABELS[key] ?? key.split('_').join(' ');
 }
 
 function formatValue(v: any) {
